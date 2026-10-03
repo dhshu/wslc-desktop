@@ -1,0 +1,21 @@
+---
+name: "🙏 Question / Help"
+about: "Ask a question or request help"
+title: "[Q]: "
+labels: ["question"]
+assignees: ["dhshu"]
+---
+
+## Question
+
+Please describe your question clearly.
+
+## What have you tried?
+
+Include any commands, settings, or UI steps you already tried.
+
+## Environment
+
+- Windows version:
+- WSL version:
+- wslc version:

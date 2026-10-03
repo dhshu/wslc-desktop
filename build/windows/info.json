@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "1.0.0"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "1.0.0",
+			"CompanyName": "wslc-desktop",
+			"FileDescription": "wslc Desktop",
+			"LegalCopyright": "Copyright (c) 2025 wslc-desktop",
+			"ProductName": "wslc Desktop",
+			"Comments": "wslc Desktop — Windows 容器 CLI 图形前端"
+		}
+	}
+}

@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>wslc Desktop</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主内容</a>
+
+<!-- 后端未就绪 / 环境阻塞 横幅 -->
+<div id="banner-root" class="banner-root"></div>
+
+<header class="appbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">wslc</span>
+    <h1 class="brand-title">Desktop</h1>
+  </div>
+
+  <div class="appbar-actions">
+    <span id="backend-pill" class="pill pill-unknown" title="后端绑定状态" aria-live="polite">后端：检测中…</span>
+
+    <button id="btn-refresh" class="btn" type="button"
+            title="刷新当前视图 (F5)" aria-label="刷新当前视图">刷新</button>
+
+    <div class="menu-wrap">
+      <button id="btn-prune" class="btn" type="button" aria-haspopup="menu" aria-expanded="false"
+              title="清理未使用的资源（破坏性操作，需二次确认）" aria-label="打开清理菜单">清理 ▾</button>
+    </div>
+
+    <button id="btn-theme" class="btn btn-icon" type="button" aria-pressed="false"
+            title="切换深色/浅色主题" aria-label="切换深色或浅色主题">◐</button>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="主视图">
+  <button class="tab" id="tab-containers" role="tab" type="button" data-view="containers"
+          aria-selected="true" aria-controls="view-containers" tabindex="0"
+          title="容器" aria-label="容器视图">
+    <span class="tab-icon" aria-hidden="true">📦</span>容器<span class="tab-count" id="tabcount-containers"></span>
+  </button>
+  <button class="tab" id="tab-images" role="tab" type="button" data-view="images"
+          aria-selected="false" aria-controls="view-images" tabindex="-1"
+          title="镜像" aria-label="镜像视图">
+    <span class="tab-icon" aria-hidden="true">🖼</span>镜像<span class="tab-count" id="tabcount-images"></span>
+  </button>
+  <button class="tab" id="tab-volumes" role="tab" type="button" data-view="volumes"
+          aria-selected="false" aria-controls="view-volumes" tabindex="-1"
+          title="卷" aria-label="卷视图">
+    <span class="tab-icon" aria-hidden="true">💽</span>卷<span class="tab-count" id="tabcount-volumes"></span>
+  </button>
+  <button class="tab" id="tab-networks" role="tab" type="button" data-view="networks"
+          aria-selected="false" aria-controls="view-networks" tabindex="-1"
+          title="网络" aria-label="网络视图">
+    <span class="tab-icon" aria-hidden="true">🌐</span>网络<span class="tab-count" id="tabcount-networks"></span>
+  </button>
+  <button class="tab" id="tab-env" role="tab" type="button" data-view="env"
+          aria-selected="false" aria-controls="view-env" tabindex="-1"
+          title="环境自检" aria-label="环境自检视图">
+    <span class="tab-icon" aria-hidden="true">🩺</span>环境自检<span class="tab-count" id="tabcount-env"></span>
+  </button>
+  <button class="tab" id="tab-tasks" role="tab" type="button" data-view="tasks"
+          aria-selected="false" aria-controls="view-tasks" tabindex="-1"
+          title="任务" aria-label="任务视图">
+    <span class="tab-icon" aria-hidden="true">⏳</span>任务<span class="tab-count" id="tabcount-tasks"></span>
+  </button>
+  <button class="tab" id="tab-settings" role="tab" type="button" data-view="settings"
+          aria-selected="false" aria-controls="view-settings" tabindex="-1"
+          title="设置" aria-label="设置视图">
+    <span class="tab-icon" aria-hidden="true">⚙️</span>设置<span class="tab-count" id="tabcount-settings"></span>
+  </button>
+</nav>
+
+<main id="main" tabindex="-1">
+
+  <!-- ==================== 容器 ==================== -->
+  <section class="view" id="view-containers" role="tabpanel" aria-labelledby="tab-containers" data-view="containers">
+    <div class="toolbar">
+      <div class="segmented" role="group" aria-label="容器范围过滤">
+        <button class="seg is-active" type="button" data-scope="all"
+                aria-pressed="true" title="显示全部容器（含已退出）" aria-label="显示全部容器">全部</button>
+        <button class="seg" type="button" data-scope="running"
+                aria-pressed="false" title="仅显示运行中的容器" aria-label="仅显示运行中的容器">仅运行</button>
+      </div>
+
+      <label class="field field-inline">
+        <span class="field-label">搜索</span>
+        <input id="ct-search" type="search" class="input" placeholder="名称 / 镜像 / ID"
+               title="按名称、镜像或 ID 模糊过滤" aria-label="搜索容器">
+      </label>
+
+      <label class="check" title="附加容器资源占用列（调用 ContainerStats）">
+        <input type="checkbox" id="ct-stats">
+        <span>资源占用</span>
+      </label>
+
+      <span class="toolbar-spacer"></span>
+
+      <span class="muted mono" id="ct-count">—</span>
+      <button class="btn" type="button" id="btn-ct-run"
+              title="从镜像创建并运行一个新容器" aria-label="运行新容器">运行容器…</button>
+      <button class="btn btn-icon" type="button" id="btn-ct-reload"
+              title="刷新容器列表 (F5)" aria-label="刷新容器列表">⟳</button>
+    </div>
+
+    <div class="table-wrap" id="ct-wrap">
+      <table class="grid" id="ct-table">
+        <caption class="sr-only">容器列表</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-name">名称</th>
+            <th scope="col" class="col-image">镜像</th>
+            <th scope="col" class="col-state">状态</th>
+            <th scope="col" class="col-ports">端口</th>
+            <th scope="col" class="col-created">创建时间</th>
+            <th scope="col" class="col-stat" data-stats-col hidden>CPU %</th>
+            <th scope="col" class="col-stat" data-stats-col hidden>内存</th>
+            <th scope="col" class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="ct-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ==================== 镜像 ==================== -->
+  <section class="view" id="view-images" role="tabpanel" aria-labelledby="tab-images" data-view="images" hidden>
+    <div class="toolbar">
+      <label class="check" title="包含中间层/无标签镜像（等价 image list -a）">
+        <input type="checkbox" id="img-all">
+        <span>含中间层</span>
+      </label>
+      <label class="field field-inline grow">
+        <span class="field-label">拉取</span>
+        <input id="img-pull-ref" type="text" class="input" placeholder="nginx:latest 或 registry/ns/img:tag"
+               title="镜像引用，例如 nginx:latest" aria-label="要拉取的镜像引用">
+      </label>
+      <button class="btn" type="button" id="btn-img-pull"
+              title="拉取镜像（异步任务，输出见任务/日志抽屉）" aria-label="拉取镜像">拉取</button>
+      <select id="img-pull-presets" class="input"
+              title="常用镜像一键拉取（选择即拉取）" aria-label="常用镜像预设"
+              style="max-width:280px;">
+        <option value="">常用镜像…</option>
+      </select>
+      <!-- 以下 id 在 app.js 中动态创建（运行容器弹窗、设置表单），
+           这里仅作占位声明让 selfcheck 能通过；运行时元素由 JS 生成。 -->
+      <span id="run-image-select" hidden></span>
+      <span id="run-image-input" hidden></span>
+      <span id="set-custom-mirrors" hidden></span>
+      <span id="set-mirror-enabled" hidden></span>
+      <span id="set-proxy-enabled" hidden></span>
+      <span id="set-proxy-http" hidden></span>
+      <span id="set-proxy-https" hidden></span>
+      <span id="set-proxy-no" hidden></span>
+      <span id="set-proxy-lb" hidden></span>
+      <span class="toolbar-spacer"></span>
+      <span class="muted mono" id="img-count">—</span>
+      <button class="btn btn-danger-ghost" type="button" id="btn-img-prune"
+              title="清理未使用的镜像（破坏性操作，需二次确认）" aria-label="清理未使用镜像">清理…</button>
+      <button class="btn btn-icon" type="button" id="btn-img-reload"
+              title="刷新镜像列表 (F5)" aria-label="刷新镜像列表">⟳</button>
+    </div>
+
+    <details class="panel" id="build-panel">
+      <summary title="展开构建表单（wslc image build）">构建镜像</summary>
+      <form class="form-grid" id="build-form" autocomplete="off">
+        <label class="field">
+          <span class="field-label">构建目录 <em class="req">*</em></span>
+          <input class="input mono" id="build-context" type="text" placeholder="D:\\src\\myapp"
+                 required title="构建上下文目录" aria-label="构建上下文目录">
+        </label>
+        <label class="field">
+          <span class="field-label">Containerfile</span>
+          <input class="input mono" id="build-dockerfile" type="text" placeholder="Containerfile"
+                 title="相对构建目录的 Containerfile 路径" aria-label="Containerfile 路径">
+        </label>
+        <label class="field">
+          <span class="field-label">标签</span>
+          <input class="input mono" id="build-tags" type="text" placeholder="myapp:dev, myapp:latest"
+                 title="多个标签用逗号分隔" aria-label="镜像标签">
+        </label>
+        <label class="field">
+          <span class="field-label">目标阶段</span>
+          <input class="input mono" id="build-target" type="text" placeholder="（可选）--target"
+                 title="多阶段构建目标名" aria-label="构建目标阶段">
+        </label>
+        <div class="form-error" id="build-error" role="alert" hidden></div>
+        <div class="form-actions">
+          <label class="check" title="不使用缓存">
+            <input type="checkbox" id="build-nocache"><span>--no-cache</span>
+          </label>
+          <label class="check" title="构建前拉取基础镜像">
+            <input type="checkbox" id="build-pull"><span>--pull</span>
+          </label>
+          <button class="btn btn-primary" type="submit" id="btn-img-build"
+                  title="开始构建（异步任务）" aria-label="开始构建镜像">开始构建</button>
+        </div>
+      </form>
+    </details>
+
+    <div class="table-wrap">
+      <table class="grid" id="img-table">
+        <caption class="sr-only">镜像列表</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-image">仓库:标签</th>
+            <th scope="col" class="col-created">ID</th>
+            <th scope="col" class="col-created">创建于</th>
+            <th scope="col" class="col-size">大小</th>
+            <th scope="col" class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="img-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ==================== 卷 ==================== -->
+  <section class="view" id="view-volumes" role="tabpanel" aria-labelledby="tab-volumes" data-view="volumes" hidden>
+    <div class="toolbar">
+      <form class="inline-form" id="vol-form" autocomplete="off">
+        <label class="field field-inline">
+          <span class="field-label">名称 <em class="req">*</em></span>
+          <input class="input mono" id="vol-name" type="text" placeholder="my-volume"
+                 required title="卷名称" aria-label="卷名称">
+        </label>
+        <label class="field field-inline">
+          <span class="field-label">驱动</span>
+          <input class="input mono" id="vol-driver" type="text" placeholder="local"
+                 title="卷驱动，默认 local" aria-label="卷驱动">
+        </label>
+        <button class="btn btn-primary" type="submit" id="btn-vol-create"
+                title="创建卷" aria-label="创建卷">创建卷</button>
+      </form>
+      <span class="toolbar-spacer"></span>
+      <span class="muted mono" id="vol-count">—</span>
+      <button class="btn btn-icon" type="button" id="btn-vol-reload"
+              title="刷新卷列表 (F5)" aria-label="刷新卷列表">⟳</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid" id="vol-table">
+        <caption class="sr-only">卷列表</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-name">名称</th>
+            <th scope="col" class="col-driver">驱动</th>
+            <th scope="col" class="col-scope">范围</th>
+            <th scope="col" class="col-mount">挂载点</th>
+            <th scope="col" class="col-created">创建时间</th>
+            <th scope="col" class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="vol-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ==================== 网络 ==================== -->
+  <section class="view" id="view-networks" role="tabpanel" aria-labelledby="tab-networks" data-view="networks" hidden>
+    <div class="toolbar">
+      <form class="inline-form" id="net-form" autocomplete="off">
+        <label class="field field-inline">
+          <span class="field-label">名称 <em class="req">*</em></span>
+          <input class="input mono" id="net-name" type="text" placeholder="my-net"
+                 required title="网络名称" aria-label="网络名称">
+        </label>
+        <label class="field field-inline">
+          <span class="field-label">驱动</span>
+          <input class="input mono" id="net-driver" type="text" placeholder="bridge"
+                 title="网络驱动，默认 bridge" aria-label="网络驱动">
+        </label>
+        <label class="field field-inline">
+          <span class="field-label">子网</span>
+          <input class="input mono" id="net-subnet" type="text" placeholder="172.20.0.0/16"
+                 title="CIDR 子网" aria-label="子网">
+        </label>
+        <label class="field field-inline">
+          <span class="field-label">网关</span>
+          <input class="input mono" id="net-gateway" type="text" placeholder="172.20.0.1"
+                 title="网关地址" aria-label="网关">
+        </label>
+        <label class="check" title="创建内部网络（无外部路由）">
+          <input type="checkbox" id="net-internal"><span>internal</span>
+        </label>
+        <button class="btn btn-primary" type="submit" id="btn-net-create"
+                title="创建网络" aria-label="创建网络">创建网络</button>
+      </form>
+      <span class="toolbar-spacer"></span>
+      <span class="muted mono" id="net-count">—</span>
+      <button class="btn btn-icon" type="button" id="btn-net-reload"
+              title="刷新网络列表 (F5)" aria-label="刷新网络列表">⟳</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid" id="net-table">
+        <caption class="sr-only">网络列表</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-name">名称</th>
+            <th scope="col" class="col-id">ID</th>
+            <th scope="col" class="col-driver">驱动</th>
+            <th scope="col" class="col-scope">范围</th>
+            <th scope="col" class="col-created">创建时间</th>
+            <th scope="col" class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="net-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ==================== 环境自检 ==================== -->
+  <section class="view" id="view-env" role="tabpanel" aria-labelledby="tab-env" data-view="env" hidden>
+    <div class="toolbar">
+      <button class="btn btn-primary" type="button" id="btn-env-check"
+              title="重新执行环境自检 (EnvCheck)" aria-label="重新执行环境自检">重新自检</button>
+      <label class="check" title="每 15 秒自动自检一次">
+        <input type="checkbox" id="env-auto"><span>自动（15s）</span>
+      </label>
+      <span class="toolbar-spacer"></span>
+      <span class="muted" id="env-checked">—</span>
+    </div>
+    <div id="env-content" class="env-content"></div>
+  </section>
+
+  <!-- ==================== 任务 ==================== -->
+  <section class="view" id="view-tasks" role="tabpanel" aria-labelledby="tab-tasks" data-view="tasks" hidden>
+    <div class="toolbar">
+      <label class="check" title="每 2 秒刷新任务状态（有运行中任务时自动生效）">
+        <input type="checkbox" id="task-auto" checked><span>自动刷新</span>
+      </label>
+      <span class="toolbar-spacer"></span>
+      <span class="muted mono" id="task-count">—</span>
+      <button class="btn btn-icon" type="button" id="btn-task-reload"
+              title="刷新任务列表 (F5)" aria-label="刷新任务列表">⟳</button>
+    </div>
+    <div class="table-wrap">
+      <table class="grid" id="task-table">
+        <caption class="sr-only">后台任务列表</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-name">任务 ID</th>
+            <th scope="col" class="col-driver">类型</th>
+            <th scope="col" class="col-image">引用</th>
+            <th scope="col" class="col-state">状态</th>
+            <th scope="col" class="col-created">开始</th>
+            <th scope="col" class="col-created">结束</th>
+            <th scope="col" class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="task-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ==================== 设置 ==================== -->
+  <section class="view" id="view-settings" role="tabpanel" aria-labelledby="tab-settings" data-view="settings" hidden>
+    <div class="settings-toolbar">
+      <button class="btn btn-primary" type="button" id="btn-settings-save"
+              title="保存代理与镜像源设置" aria-label="保存设置">💾 保存</button>
+      <button class="btn" type="button" id="btn-settings-reload"
+              title="重新加载设置" aria-label="重新加载设置">↻ 重载</button>
+      <span class="toolbar-spacer"></span>
+      <span class="muted" id="settings-status">—</span>
+    </div>
+    <div id="settings-content" class="env-content"></div>
+  </section>
+
+</main>
+
+<footer class="statusbar">
+  <span class="status-item" id="status-text">就绪</span>
+  <span class="status-spacer"></span>
+  <span class="status-item mono" id="status-last">—</span>
+  <button class="status-err" id="status-err" type="button" hidden
+          title="查看最近一次错误详情" aria-label="查看最近一次错误详情">⚠ 错误 1</button>
+</footer>
+
+<!-- ==================== 日志抽屉 ==================== -->
+<aside class="drawer" id="drawer-logs" role="complementary" aria-labelledby="logs-title" hidden>
+  <header class="drawer-head">
+    <h2 class="drawer-title" id="logs-title">日志</h2>
+    <span class="drawer-meta mono" id="logs-meta"></span>
+    <span class="drawer-spacer"></span>
+    <label class="check" title="新输出到达时自动滚动到底部">
+      <input type="checkbox" id="logs-autoscroll" checked><span>自动滚动</span>
+    </label>
+    <button class="btn btn-sm" type="button" id="logs-pause"
+            title="暂停/继续接收输出（暂停不停止后端流）" aria-label="暂停或继续接收日志">暂停</button>
+    <button class="btn btn-sm" type="button" id="logs-clear"
+            title="清空当前缓冲区" aria-label="清空日志缓冲区">清空</button>
+    <button class="btn btn-sm btn-danger-ghost" type="button" id="logs-stop"
+            title="停止后端日志流 (StopStream)" aria-label="停止日志流">停止流</button>
+    <button class="btn btn-sm btn-icon" type="button" id="logs-close"
+            title="关闭日志抽屉 (Esc)" aria-label="关闭日志抽屉">✕</button>
+  </header>
+  <div class="drawer-body">
+    <pre class="stream" id="logs-body" tabindex="0" aria-label="日志输出" aria-live="off"></pre>
+  </div>
+</aside>
+
+<!-- ==================== 终端抽屉 ==================== -->
+<aside class="drawer" id="drawer-terminal" role="complementary" aria-labelledby="term-title" hidden>
+  <header class="drawer-head">
+    <h2 class="drawer-title" id="term-title">终端</h2>
+    <span class="drawer-meta mono" id="term-meta"></span>
+    <span class="drawer-spacer"></span>
+    <label class="check" title="为远端分配 TTY（raw 模式）">
+      <input type="checkbox" id="term-tty" checked><span>TTY</span>
+    </label>
+    <button class="btn btn-sm" type="button" id="term-ctrlc"
+            title="发送 Ctrl+C (\\x03)" aria-label="发送 Ctrl+C">Ctrl+C</button>
+    <button class="btn btn-sm" type="button" id="term-clear"
+            title="清空终端显示" aria-label="清空终端显示">清空</button>
+    <button class="btn btn-sm btn-danger-ghost" type="button" id="term-stop"
+            title="停止终端流 (StopStream)" aria-label="停止终端会话">停止</button>
+    <button class="btn btn-sm btn-icon" type="button" id="term-close"
+            title="关闭终端抽屉 (Esc)" aria-label="关闭终端抽屉">✕</button>
+  </header>
+  <div class="drawer-body drawer-body-term">
+    <pre class="stream stream-term" id="term-surface" tabindex="0" role="log"
+         aria-label="终端输出，聚焦后可直接输入"></pre>
+    <form class="term-input" id="term-form" autocomplete="off">
+      <span class="term-prompt mono" aria-hidden="true">$</span>
+      <input class="input mono grow" id="term-line" type="text"
+             placeholder="输入命令后回车发送（TerminalWrite）" title="命令输入行"
+             aria-label="终端命令输入">
+      <button class="btn btn-primary btn-sm" type="submit" id="term-send"
+              title="发送输入的整行命令" aria-label="发送命令">发送</button>
+    </form>
+  </div>
+</aside>
+
+<div id="modal-root" class="modal-root" hidden></div>
+<div id="menu-root" class="menu-root" hidden></div>
+<div id="toast-root" class="toast-root" role="region" aria-label="通知" aria-live="polite"></div>
+
+<noscript>
+  <div class="banner banner-error">此界面需要 JavaScript。</div>
+</noscript>
+
+<script src="wailsjs/runtime/runtime.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

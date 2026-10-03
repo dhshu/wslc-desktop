@@ -1,0 +1,46 @@
+# ---- Go ----
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+coverage.html
+
+# ---- Wails build output ----
+build/bin/
+build/*.zip
+build/windows/installer/*.msi
+build/windows/installer/**/
+!build/windows/installer/wails.exe.manifest
+!build/windows/info.json
+!build/windows/icon.ico
+!build/appicon.png
+
+# ---- Editor / OS ----
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Node / frontend ----
+node_modules/
+*.log
+
+# ---- Local / user files ----
+.env
+.env.*
+*.local
+wslc-desktop-settings.json
+.wslc-desktop/
+*.bak
+*.tmp
+
+# ---- Project-local scratch ----
+issue_body.txt
+geoip.dat

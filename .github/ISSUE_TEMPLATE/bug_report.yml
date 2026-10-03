@@ -1,0 +1,51 @@
+---
+name: "🐛 Bug report"
+about: "Report a bug that is not yet documented"
+title: "[Bug]: "
+labels: ["bug", "triage"]
+assignees: ["dhshu"]
+---
+
+## What happened?
+
+A clear and concise description of what happened.
+
+## Expected behavior
+
+A clear and concise description of what you expected to happen.
+
+## wslc Desktop version
+
+<!-- Build info shown in the bottom-left status bar, or run: -->
+`wslc-desktop --version`
+
+## Environment
+
+- **Windows version**: <!-- `winver` -->
+- **WSL version**: <!-- `wsl -l -v` or `wslc --version` -->
+- **wslc version**: <!-- `wslc --version` -->
+- **Region / ISP**: <!-- Optional, but useful for mirror-related issues -->
+
+## Reproduction steps
+
+1. ...
+2. ...
+
+## Error output
+
+```
+Paste the exact error message here.
+```
+
+## Additional context
+
+Add any other context about the problem here. Screenshots are welcome.
+
+---
+
+**Before opening an issue, please check:**
+
+- [ ] `vmcompute` service is running (see README §"System requirements")
+- [ ] I have tried reproducing with a fresh settings file
+      (`%APPDATA%\wslc-desktop-settings.json`)
+- [ ] I have searched existing issues
