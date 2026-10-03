@@ -2,7 +2,7 @@
 
 **用 Go + Wails 为 [wslc](https://learn.microsoft.com/en-us/windows/wsl/wsl-container) 写的 Windows 桌面管理工具。**
 
-`wslc.exe` 是微软随 WSL ≥ 2.9.3 分发的 Linux 容器 CLI，可以在 Windows 上构建、运行和管理 Linux 容器，**无需 Docker Desktop**。本项目把它的核心操作包装成图形界面，补齐 wslc 缺失的镜像源与代理配置能力。
+`wslc.exe` 是微软随 WSL ≥ 2.9.3 分发的 Linux 容器 CLI，可以在 Windows 上构建、运行和管理 Linux 容器，**无需 Docker Desktop**。本项目把它的核心操作包装成图形界面，补齐 wslc 缺失的镜像源配置能力。
 
 界面采用深色主题、圆角卡片、状态胶囊、iOS 风格切换开关。截图见 [docs/screenshot.png](docs/screenshot.png)。
 
@@ -12,7 +12,7 @@
 
 - **零前端构建**：纯静态 HTML/CSS/JS，没有 npm、没有 webpack。产物约 12 MB 单文件 exe。
 - **零 Go 依赖注入**：所有后端代码都是标准库 + Wails v2，`internal/service` 完全不 import Wails，可纯 Go 测试。
-- **卡片墙风格设置页**：镜像源卡片墙（可点击激活 + 独立探测）、代理 iOS 开关 + `host.wslc.internal` 提示、常用镜像预设编辑器（30 条内置、可增删改）。
+- **卡片墙风格设置页**：镜像源卡片墙（可点击激活 + 独立探测）、常用镜像预设编辑器（30 条内置、可增删改）。
 - **完整能力**：容器 / 镜像 / 卷 / 网络 / 环境自检 / 任务 / 设置 七页视图；日志跟随 + 交互式终端抽屉。
 - **破坏性操作二次确认**：删除、prune、kill 一律弹确认框。
 - **JSON 优先 + 表格回退**解析器，带多语言表头别名（wslc 的表头会随系统语言本地化）。
@@ -27,7 +27,7 @@
 | **网络** | 列表、创建（驱动 / 子网 / 网关 / 内部）、删除 |
 | **环境自检** | wslc 路径与版本、WSL 版本、内核版本、会话列表、容器服务是否就绪、可执行的修复建议 |
 | **任务** | 后台任务（拉取 / 构建 / 流）状态、输出、取消 |
-| **设置** | 镜像源改写（卡片墙 + 探测）、代理注入（HTTP/HTTPS/NO_PROXY + `host.wslc.internal`）、常用镜像预设编辑 |
+| **设置** | 镜像源改写（卡片墙 + 探测）、常用镜像预设编辑 |
 | **日志 / 终端抽屉** | 流式日志（可暂停）与交互式 `exec` 会话 |
 
 ## 系统要求
@@ -163,13 +163,7 @@ wslc 当前**没有 registry mirror 配置项**（[microsoft/WSL#40951](https://
 
 `internal/service/settings.go` 内置 12 个镜像源，其中 `docker.m.daocloud.io` / `docker.xuanyuan.me` / `docker.1panel.live` 已在本机（中国大陆家庭宽带，2026-10 实测）跑通；其余作为已下线或需要专属 id 的备选列出。UI 允许追加自定义镜像源。`TestMirror` 用 `hello-world:latest` 探测，返回真实耗时。
 
-### 2. 代理注入
-
-仅对 `wslc run` 生效（`wslc image pull` 的 registry 请求在宿主机侧、且忽略 `HTTP_PROXY`）。以 `-e HTTP_PROXY=…` / `-e HTTPS_PROXY=…` / `-e NO_PROXY=…` 注入容器。
-
-**关键坑**：容器内 `127.0.0.1` 指向容器自身，宿主机代理必须监听 `0.0.0.0`，容器内请用 `host.wslc.internal`（= `169.254.73.254`）。UI 会自动把用户填的 `127.0.0.1` / `localhost` 改写为 `host.wslc.internal`。`TestProxy` 用 HTTP HEAD 探测（SOCKS 走 TCP dial），任意 HTTP 状态码都算可达。
-
-### 3. 常用镜像预设
+### 2. 常用镜像预设
 
 `AppSettings.PresetImages []PresetImage{Label, Ref}` 持久化在设置文件中，默认播种 30 个开发常用镜像（MySQL / Oracle XE / PostgreSQL / Redis / Nacos / Kafka / Elasticsearch / Kibana / MinIO / Jenkins / Harbor / Nginx / Node.js / Python / Golang / Temurin JDK / Consul / etcd / RabbitMQ / Airflow / Grafana / Prometheus / OpenSearch / Doris / ClickHouse / TiDB …）。UI 允许增删改与上移；保存时后端去重、去空、cap 200 条，Label 为空时回填 Ref。镜像页拉取下拉从这份清单实时读取。
 
@@ -183,10 +177,6 @@ wslc 当前**没有 registry mirror 配置项**（[microsoft/WSL#40951](https://
 | `MirrorEnabled` | bool | 是否启用镜像名改写 |
 | `MirrorEndpoint` | string | 生效的镜像源 host（如 `docker.m.daocloud.io`） |
 | `CustomMirrors` | []string | 内置 + 用户追加的镜像源列表 |
-| `ProxyEnabled` | bool | 是否对 `wslc run` 注入 `-e HTTP_PROXY=…` |
-| `ProxyHTTP` / `ProxyHTTPS` | string | 代理 URL |
-| `ProxyNO` | string | 排除列表 |
-| `ProxyHostLoopback` | string | 宿主回环主机名，默认 `host.wslc.internal` |
 | `PresetImages` | []PresetImage | 常用镜像预设（`{Label, Ref}`），最多 200 条 |
 
 ## 视觉风格
@@ -194,8 +184,8 @@ wslc 当前**没有 registry mirror 配置项**（[microsoft/WSL#40951](https://
 设置页采用卡片墙风格：
 
 - 圆角卡片（`--r-lg` = 10px）+ 顶部渐变条（激活时蓝→青→绿）
-- iOS 风格切换开关（`.switch`）用于「镜像改写」/「代理注入」
-- 状态胶囊（`.status-pill`）区分 `Currently Active` / `Proxy Active` / `Normal` / `Off`
+- iOS 风格切换开关（`.switch`）用于「镜像改写」
+- 状态胶囊（`.status-pill`）区分 `Currently Active` / `Normal` / `Off`
 - 每卡自带图标 badge、标签、描述、内联探测按钮与探测结果
 - 表格视图沿用原设计，只把圆角从 3px 提升到 4–6px
 
@@ -203,7 +193,7 @@ wslc 当前**没有 registry mirror 配置项**（[microsoft/WSL#40951](https://
 
 1. **终端不是完整终端仿真**：抽屉是"整行发送 + 单键 raw"的混合实现，不解析 ANSI 光标移动；`TerminalResize` 是有意的 no-op（未分配 PTY）。日志与终端都走 Wails 事件流。
 2. **`internal/domain` 没有单元测试**：纯数据结构，其行为由 `internal/wslc` 的解析测试与 `internal/service` 的真实输出 fixture 覆盖。
-3. **wslc 上游问题**：镜像源与 proxy 都是 wslc 上游缺失的能力，本项目的绕过方案依赖 wslc CLI 的 `-e` 和 image-name 参数。若未来 wslc 官方支持 `settings.yaml` 的 mirror 配置，本项目的镜像源改写会自动失效（可通过关闭开关恢复）。
+3. **wslc 上游问题**：镜像源是 wslc 上游缺失的能力，本项目的绕过方案依赖 wslc CLI 的 image-name 参数。若未来 wslc 官方支持 `settings.yaml` 的 mirror 配置，本项目的镜像源改写会自动失效（可通过关闭开关恢复）。
 
 ## 文档
 
@@ -229,7 +219,7 @@ wslc 当前**没有 registry mirror 配置项**（[microsoft/WSL#40951](https://
 1. 阅读 [docs/CONTRACT.md](docs/CONTRACT.md) 了解前后端契约（改动契约需同步更新契约测试 `internal/service/binding_test.go` 与 `frontend/tools/selfcheck.mjs`）。
 2. 本地跑 `go test ./...` 与 `node frontend/tools/selfcheck.mjs`。
 3. 破坏性操作必须走二次确认框，不要绕过。
-4. 涉及安全边界（命令拼接、proxy URL 注入）的改动，请写单元测试并用 `-race` 验证。
+4. 涉及安全边界（命令拼接、设置解析）的改动，请写单元测试并用 `-race` 验证。
 
 ## 许可
 

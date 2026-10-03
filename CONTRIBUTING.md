@@ -51,7 +51,7 @@ go test -tags integration ./... -count=1   # requires real wslc.exe
 Conventional Commits are encouraged but not enforced:
 
 ```
-feat(settings): add proxy loopback rewrite
+feat(settings): add registry mirror preset list
 fix(wslc): handle localized Chinese error message
 docs(readme): update install instructions
 ```
@@ -70,7 +70,7 @@ docs(readme): update install instructions
 
 ## Security-sensitive changes
 
-Anything touching command construction, proxy URL injection, or user settings
+Anything touching command construction or user settings
 parsing must come with a unit test. Run the race detector:
 
 ```powershell

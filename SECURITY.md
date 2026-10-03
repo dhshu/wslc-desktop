@@ -30,8 +30,6 @@ This policy covers:
 - Command injection via container names, image refs, or user-supplied arguments
   (mitigated by always using `exec.Command` with an argument slice — see
   `internal/service/*`).
-- Improper validation of proxy URLs in `internal/service/settings.go`
-  (`normalizeProxyURL`).
 - Path traversal in settings file resolution (`settingsPath`).
 
 If you find a bypass, please report privately.

@@ -423,7 +423,7 @@ let totalFailures = 0;
   const diag = env.win.__wslc && env.win.__wslc.diag ? env.win.__wslc.diag() : null;
   rep.check('window.__wslc.diag() 可用', !!diag);
   rep.check('后端模式 = unavailable', diag && diag.mode === 'unavailable', diag && diag.mode);
-  rep.check('期望方法数 = 36', diag && diag.expected && diag.expected.length === 36, diag && diag.expected && diag.expected.length);
+  rep.check('期望方法数 = 35', diag && diag.expected && diag.expected.length === 35, diag && diag.expected && diag.expected.length);
 
   const bannerText = env.textOf(env.byId.get('banner-root'));
   rep.check('显示「后端未就绪」横幅（不白屏）', /后端未就绪/.test(bannerText));
@@ -507,13 +507,10 @@ let totalFailures = 0;
     InspectContainer: () => ({ ID: CID, State: { Status: 'running' } }),
     LoadSettings: () => ({
       MirrorEnabled: true, MirrorEndpoint: 'docker.m.daocloud.io',
-      CustomMirrors: ['docker.io', 'docker.m.daocloud.io', 'docker.1panel.live'],
-      ProxyEnabled: false, ProxyHTTP: '', ProxyHTTPS: '',
-      ProxyNO: 'localhost,127.0.0.1', ProxyHostLoopback: 'host.wslc.internal'
+      CustomMirrors: ['docker.io', 'docker.m.daocloud.io', 'docker.1panel.live']
     }),
     SaveSettings: (o) => o,
-    TestMirror: () => ({ Endpoint: 'docker.m.daocloud.io', TargetRef: 'hello-world:latest', OK: true, DurationMS: 1200, Message: 'ok' }),
-    TestProxy: () => ({ OK: true, DurationMS: 40, Message: 'reachable' })
+    TestMirror: () => ({ Endpoint: 'docker.m.daocloud.io', TargetRef: 'hello-world:latest', OK: true, DurationMS: 1200, Message: 'ok' })
   };
 
   const methods = [
@@ -523,7 +520,7 @@ let totalFailures = 0;
     'ListImages', 'PullImage', 'BuildImage', 'RemoveImage', 'TagImage', 'InspectImage',
     'ListVolumes', 'CreateVolume', 'RemoveVolume', 'ListNetworks', 'CreateNetwork',
     'RemoveNetwork', 'PruneContainers', 'PruneImages', 'ListTasks', 'CancelTask', 'StreamEvents',
-    'LoadSettings', 'SaveSettings', 'TestMirror', 'TestProxy'
+    'LoadSettings', 'SaveSettings', 'TestMirror'
   ];
   const go = {};
   for (const name of methods) {

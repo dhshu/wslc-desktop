@@ -38,9 +38,9 @@ func main() {
 
 	err = wails.Run(&options.App{
 		Title:            "wslc Desktop",
-		Width:            850,    // 默认可见区域约为主屏 2/3，减少初次打开的视觉压迫感
-		Height:           540,
-		MinWidth:         640,    // 保持与默认尺寸同比例，仍允许拉大到全屏
+		Width:            940, // 默认窗口较原 850×540 整体放大 10%
+		Height:           600,
+		MinWidth:         640, // 保持与默认尺寸同比例，仍允许拉大到全屏
 		MinHeight:        430,
 		BackgroundColour: options.NewRGBA(15, 17, 21, 255),
 		AssetServer: &assetserver.Options{

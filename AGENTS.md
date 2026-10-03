@@ -4,7 +4,7 @@
 
 ## 项目一句话
 
-`wslc Desktop` 是用 **Go + Wails v2** 为微软 [wslc](https://learn.microsoft.com/en-us/windows/wsl/wsl-container) 写的 Windows 桌面管理工具，补齐 wslc 缺失的镜像源与代理配置能力。前端是**零构建**的纯静态 HTML/CSS/JS。
+`wslc Desktop` 是用 **Go + Wails v2** 为微软 [wslc](https://learn.microsoft.com/en-us/windows/wsl/wsl-container) 写的 Windows 桌面管理工具，补齐 wslc 缺失的镜像源配置能力。前端是**零构建**的纯静态 HTML/CSS/JS。
 
 ## 目录
 
@@ -31,7 +31,7 @@ docs/                           PLAN / CONTRACT / ENVIRONMENT / VERIFICATION
 5. **破坏性操作（delete / prune / kill）必须走二次确认框**，不要绕过。
 6. **不要新增前端构建链**：不引入 npm / webpack / vite / bundler。前端就是三个文件加 `tools/*.mjs` 自测脚本。
 7. **不要新增 Go 依赖注入框架**（Wire、dg 之类）。装配在 `main.go` / `app.go` 手工完成。
-8. **改动安全边界（命令构造、proxy URL 注入、设置解析）必须附带单元测试**，并用 `go test ./... -race -count=1` 验证。
+8. **改动安全边界（命令构造、设置解析）必须附带单元测试**，并用 `go test ./... -race -count=1` 验证。
 
 ## 已知 wslc 事实（不要"自作聪明"改回来）
 
@@ -41,8 +41,7 @@ docs/                           PLAN / CONTRACT / ENVIRONMENT / VERIFICATION
 - `inspect` 的 `-f` 是 format 而不是 file，两个 inspect 命令都不传 `-f`。
 - 本版本没有 `wslc system prune`，只有 `container prune` 和 `image prune`（都要 `-f`）。
 - 交互式终端先试 `-i -t`，被拒绝时自动回落 `-i` 并发一条 system 事件说明。
-- `wslc image pull` 的 registry 请求发生在宿主机侧，**不读** `HTTP_PROXY`；代理注入只作用于 `wslc run`。
-- 容器内 `127.0.0.1` 指向容器自身；宿主代理必须监听 `0.0.0.0`，容器内用 `host.wslc.internal`（= `169.254.73.254`）。UI 会自动把用户填的 `127.0.0.1` / `localhost` 改写为 `host.wslc.internal`。
+- `wslc image pull` 的 registry 请求发生在会话 VM 内，**不读** `HTTP_PROXY`——所以本工具不提供代理配置，只做镜像源改写。
 - wslc 的表头会随系统语言本地化，解析器必须带多语言表头别名。
 
 完整事实清单见 [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md)。
@@ -87,7 +86,7 @@ wails build -s            # -s 因为本项目没有前端构建步骤
 遵循 Conventional Commits，scope 用模块名：
 
 ```
-feat(settings): add proxy loopback rewrite
+feat(settings): add registry mirror preset list
 fix(wslc): handle localized Chinese error message
 docs(readme): update install instructions
 ```

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,12 +37,6 @@ const settingsFileBaseName = "wslc-desktop-settings.json"
 // settingsSchemaVersion guards forward-compatible reads.
 const settingsSchemaVersion = 1
 
-// defaultHostLoopback is the name wslc resolves to the Windows host from inside
-// a container (settings.yaml session.hostLoopback, default host.wslc.internal).
-// 127.0.0.1 inside a container means the container itself, so a host-side
-// proxy must be addressed through this name.
-const defaultHostLoopback = "host.wslc.internal"
-
 // settingsFileName is the on-disk file name. Exported so the tests can build the
 // exact path without repeating the constant.
 func settingsFileName() string { return settingsFileBaseName }
@@ -60,19 +52,6 @@ type AppSettings struct {
 
 	// CustomMirrors is the user's editable list of registry endpoints.
 	CustomMirrors []string `json:"CustomMirrors"`
-
-	// ProxyEnabled turns proxy env injection into containers on or off.
-	ProxyEnabled bool `json:"ProxyEnabled"`
-	// ProxyHTTP and ProxyHTTPS are URLs, e.g. "http://host.wslc.internal:10808".
-	// Empty means "do not inject that variable".
-	ProxyHTTP  string `json:"ProxyHTTP"`
-	ProxyHTTPS string `json:"ProxyHTTPS"`
-	// ProxyNO lists hosts that must bypass the proxy, comma separated.
-	ProxyNO string `json:"ProxyNO"`
-	// ProxyHostLoopback is substituted into placeholders that cannot be
-	// resolved inside a container. "127.0.0.1" / "localhost" is rewritten here
-	// because loopback inside a container is not the host.
-	ProxyHostLoopback string `json:"ProxyHostLoopback"`
 
 	// PresetImages is the user's editable list of "one-click pull" shortcuts.
 	// Each entry is a friendly label plus the full image reference. The images
@@ -96,19 +75,14 @@ func (s *Settings) defaults() AppSettings {
 // store.
 func defaultSettings() AppSettings {
 	return AppSettings{
-		SchemaVersion:     settingsSchemaVersion,
-		MirrorEnabled:     true,
+		SchemaVersion:  settingsSchemaVersion,
+		MirrorEnabled:  true,
 		// The fastest verified endpoint from a mainland-China connection.
 		// docker.io is listed first in DefaultMirrors for clarity but is not the
 		// default because it times out without a proxy.
-		MirrorEndpoint:    "docker.m.daocloud.io",
-		CustomMirrors:     append([]string{}, BuiltInMirrors()...),
-		ProxyEnabled:      false,
-		ProxyHTTP:         "",
-		ProxyHTTPS:        "",
-		ProxyNO:           "localhost,127.0.0.1",
-		ProxyHostLoopback: defaultHostLoopback,
-		PresetImages:      append([]PresetImage{}, DefaultPresetImages...),
+		MirrorEndpoint: "docker.m.daocloud.io",
+		CustomMirrors:  append([]string{}, BuiltInMirrors()...),
+		PresetImages:   append([]PresetImage{}, DefaultPresetImages...),
 	}
 }
 
@@ -309,71 +283,6 @@ func (s *Service) rewriteImageRef(ref string) string {
 	return applyMirrorRewrite(ref, mirror)
 }
 
-// proxyEnvArgs renders the -e pairs for proxy injection into a container.
-//
-// WSLC has no proxy setting, so this is the only way to give a container an
-// egress proxy: pass the variables through as container environment. The caller
-// appends the returned flags to its own argv.
-func (s *Service) proxyEnvArgs() []string {
-	data := s.currentSettings()
-	if !data.ProxyEnabled {
-		return nil
-	}
-	vars := []struct {
-		name  string
-		value string
-	}{
-		{"HTTP_PROXY", data.ProxyHTTP},
-		{"HTTPS_PROXY", data.ProxyHTTPS},
-		{"NO_PROXY", data.ProxyNO},
-	}
-	// Uppercase aliases are what most non-GNU tooling reads.
-	vars = append(vars,
-		struct {
-			name  string
-			value string
-		}{"http_proxy", data.ProxyHTTP},
-		struct {
-			name  string
-			value string
-		}{"https_proxy", data.ProxyHTTPS},
-		struct {
-			name  string
-			value string
-		}{"no_proxy", data.ProxyNO},
-	)
-
-	seen := make(map[string]bool, len(vars))
-	args := make([]string, 0, len(vars))
-	for _, v := range vars {
-		value := rewriteHostLoopback(strings.TrimSpace(v.value), data.ProxyHostLoopback)
-		if value == "" {
-			continue
-		}
-		key := v.name + "=" + value
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		args = append(args, "-e", key)
-	}
-	return args
-}
-
-// rewriteHostLoopback replaces 127.0.0.1 and localhost with the configured
-// hostLoopback name, because loopback inside a container is not the host.
-func rewriteHostLoopback(value, hostLoopback string) string {
-	if strings.TrimSpace(value) == "" || strings.TrimSpace(hostLoopback) == "" {
-		return strings.TrimSpace(value)
-	}
-	// Only rewrite when the loopback name is itself reachable from a container
-	// (the wslc default host.wslc.internal resolves to the host).
-	for _, placeholder := range []string{"127.0.0.1", "localhost"} {
-		value = strings.ReplaceAll(value, placeholder, hostLoopback)
-	}
-	return value
-}
-
 // TestMirror probes one endpoint with a tiny public image and reports timing.
 // It is deliberately tolerant: any wslc error becomes a failed probe, not a
 // service error, so the UI can show a red row instead of a toast.
@@ -412,25 +321,10 @@ func (s *Service) TestMirror(ctx context.Context, endpoint string) (MirrorProbe,
 	return probe, nil
 }
 
-// TestProxy verifies the host proxy is reachable from the Windows side. A probe
-// from inside a container is not reliable here (xray must listen on 0.0.0.0
-// and the container reaches the host through hostLoopback), so this checks the
-// thing the user can actually fix: whether the URL opens at all.
-func (s *Service) TestProxy(ctx context.Context, url string) (ProxyProbe, error) {
-	return probeHTTPURL(ctx, strings.TrimSpace(url)), nil
-}
-
 // MirrorProbe is the result of TestMirror.
 type MirrorProbe struct {
 	Endpoint   string `json:"Endpoint"`
 	TargetRef  string `json:"TargetRef"`
-	OK         bool   `json:"OK"`
-	DurationMS int64  `json:"DurationMS"`
-	Message    string `json:"Message"`
-}
-
-// ProxyProbe is the result of TestProxy.
-type ProxyProbe struct {
 	OK         bool   `json:"OK"`
 	DurationMS int64  `json:"DurationMS"`
 	Message    string `json:"Message"`
@@ -444,20 +338,6 @@ func validateSettings(in AppSettings) (AppSettings, error) {
 	if out.MirrorEndpoint == "" {
 		return AppSettings{}, errors.New("service: 镜像地址不能为空")
 	}
-	out.ProxyHTTP = normalizeProxyURL("HTTP", out.ProxyHTTP)
-	out.ProxyHTTPS = normalizeProxyURL("HTTPS", out.ProxyHTTPS)
-	out.ProxyNO = strings.TrimSpace(out.ProxyNO)
-	if len(out.ProxyNO) > 512 {
-		return AppSettings{}, errors.New("service: NO_PROXY 过长（最多 512 字符）")
-	}
-	lb := strings.TrimSpace(out.ProxyHostLoopback)
-	if lb == "" {
-		lb = defaultHostLoopback
-	}
-	if len(lb) > 128 {
-		return AppSettings{}, errors.New("service: hostLoopback 过长（最多 128 字符）")
-	}
-	out.ProxyHostLoopback = lb
 
 	if out.CustomMirrors == nil {
 		out.CustomMirrors = []string{}
@@ -509,27 +389,6 @@ func normalizeEndpoint(v string) string {
 	v = strings.TrimPrefix(v, "https://")
 	v = strings.TrimPrefix(v, "http://")
 	v = strings.TrimRight(v, "/")
-	return v
-}
-
-// normalizeProxyURL returns "" for an empty value and a validated URL otherwise.
-func normalizeProxyURL(what, v string) string {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return ""
-	}
-	if len(v) > 256 {
-		// Return the value so the caller's error is reached; this is a soft cap.
-		return v
-	}
-	lower := strings.ToLower(v)
-	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "socks5://") && !strings.HasPrefix(lower, "socks://") {
-		return v
-	}
-	rest := v[len(strings.SplitN(v, "://", 2)[0]):]
-	if !strings.Contains(rest, ":") {
-		return v
-	}
 	return v
 }
 
@@ -645,81 +504,6 @@ func shortDigest(out string) string {
 	return ""
 }
 
-// probeHTTPURL dials a proxy URL from the Windows side and reports success and
-// timing. It uses a bare TCP connect for non-HTTP schemes (socks) and an HTTP
-// HEAD for http:// because a proxy listener may refuse arbitrary GETs.
-func probeHTTPURL(ctx context.Context, url string) ProxyProbe {
-	if url == "" {
-		return ProxyProbe{OK: false, Message: "代理地址为空"}
-	}
-	scheme, rest := url, ""
-	if i := strings.Index(url, "://"); i >= 0 {
-		scheme, rest = url[:i], url[i+3:]
-	} else {
-		rest = url
-	}
-	host := rest
-	if i := strings.IndexByte(rest, '/'); i >= 0 {
-		host = rest[:i]
-	}
-	if host == "" {
-		return ProxyProbe{OK: false, Message: "代理地址缺少 host:port"}
-	}
-	if !strings.Contains(host, ":") {
-		return ProxyProbe{OK: false, Message: "代理地址缺少端口号（应为 host:port）"}
-	}
-
-	start := time.Now()
-	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	var (
-		err    error
-		detail string
-	)
-	switch strings.ToLower(scheme) {
-	case "http":
-		req, err := http.NewRequestWithContext(probeCtx, http.MethodHead, url+"/", nil)
-		if err != nil {
-			return ProxyProbe{OK: false, Message: "代理地址无法解析：" + err.Error()}
-		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, reqErr := client.Do(req)
-		if reqErr == nil {
-			if resp != nil {
-				_ = resp.Body.Close()
-			}
-			// A proxy answering any HTTP status (even 400/407) means it is
-			// listening and reachable; that is all this probe can verify.
-			err = nil
-			detail = fmt.Sprintf("HTTP %d", resp.StatusCode)
-		} else {
-			err = reqErr
-			detail = oneLine(err)
-		}
-	default:
-		// socks and anything else: TCP connect only.
-		d := net.Dialer{Timeout: 10 * time.Second}
-		conn, connErr := d.DialContext(probeCtx, "tcp", host)
-		if connErr == nil {
-			_ = conn.Close()
-			err = nil
-			detail = "TCP 连接成功"
-		} else {
-			err = connErr
-			detail = oneLine(err)
-		}
-	}
-
-	return ProxyProbe{
-		OK:         err == nil,
-		DurationMS: time.Since(start).Milliseconds(),
-		Message:    detail,
-	}
-}
-
-// firstErrorText prefers the error, else the runner's stderr.
-
 // firstErrorText prefers the error, else the runner's stderr.
 func firstErrorText(err error, res wslc.Result) error {
 	if err != nil {
@@ -779,10 +563,6 @@ func (s *Settings) Load() (AppSettings, error) {
 		s.loaded = true
 		return s.data, nil
 	}
-	if decoded.ProxyHostLoopback == "" {
-		decoded.ProxyHostLoopback = defaultHostLoopback
-	}
-	decoded.ProxyNO = strings.TrimSpace(decoded.ProxyNO)
 	decoded.SchemaVersion = settingsSchemaVersion
 	s.data = decoded
 	s.loaded = true
@@ -855,10 +635,6 @@ func (s *Settings) Get() AppSettings {
 		s.loaded = true
 		return s.data
 	}
-	if decoded.ProxyHostLoopback == "" {
-		decoded.ProxyHostLoopback = defaultHostLoopback
-	}
-	decoded.ProxyNO = strings.TrimSpace(decoded.ProxyNO)
 	decoded.SchemaVersion = settingsSchemaVersion
 	s.data = decoded
 	s.loaded = true

@@ -303,6 +303,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 0 6px; min-width: 18px; text-align: center;
   margin-left: 2px;
 }
+.tab-count[hidden] { display: none; }
 .tab[aria-selected="true"] .tab-count {
   color: var(--text); border-color: var(--accent-dim);
   background: rgba(255,255,255,.08);
@@ -697,7 +698,7 @@ tr.state-row td {
 .mirror-card-actions > .probe-inline.ok { color: var(--running); }
 .mirror-card-actions > .probe-inline.fail { color: var(--danger); }
 
-/* 状态胶囊（Currently Active / Proxy Active / Normal） */
+/* 状态胶囊（Currently Active / Normal / Off） */
 .status-pill {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 10px; border-radius: 999px;
@@ -712,9 +713,6 @@ tr.state-row td {
 }
 .status-pill.active {
   color: var(--info); border-color: var(--info); background: var(--info-bg);
-}
-.status-pill.proxy {
-  color: var(--running); border-color: var(--running); background: var(--running-bg);
 }
 .status-pill.off {
   color: var(--text-faint);
@@ -780,29 +778,6 @@ tr.state-row td {
 }
 .form-section > .input { width: 100%; }
 .form-section .row-full { grid-column: 1 / -1; }
-
-/* 主机回环提示卡 */
-.loopback-card {
-  display: grid;
-  grid-template-columns: 34px 1fr;
-  gap: 12px;
-  padding: 14px 16px;
-  background: var(--warn-bg);
-  border: 1px solid var(--warn);
-  border-radius: var(--r-lg);
-  align-items: start;
-}
-.loopback-card > .head-icon {
-  color: var(--warn); font-size: 20px; line-height: 1;
-}
-.loopback-card > .loopback-body {
-  color: var(--text); font-size: var(--fs-sm); line-height: 1.55;
-}
-.loopback-card code {
-  font-family: var(--font-mono); font-size: var(--fs-xs);
-  background: var(--bg-code); border: 1px solid var(--border);
-  border-radius: var(--r-sm); padding: 1px 5px;
-}
 
 /* 常用镜像预设列表（可编辑行） */
 .preset-list {

@@ -40,7 +40,7 @@
     'ListVolumes', 'CreateVolume', 'RemoveVolume',
     'ListNetworks', 'CreateNetwork', 'RemoveNetwork',
     'PruneContainers', 'PruneImages', 'ListTasks', 'CancelTask', 'StreamEvents',
-    'LoadSettings', 'SaveSettings', 'TestMirror', 'TestProxy'
+    'LoadSettings', 'SaveSettings', 'TestMirror'
   ];
 
   var VIEWS = ['containers', 'images', 'volumes', 'networks', 'env', 'tasks', 'settings'];
@@ -866,7 +866,10 @@
 
   function setTabCount(view, n) {
     var el = $('tabcount-' + view);
-    if (el) el.textContent = (n === null || n === undefined) ? '' : String(n);
+    if (!el) return;
+    var s = (n === null || n === undefined || n === 0) ? '' : String(n);
+    el.textContent = s;
+    el.hidden = s === '';
   }
 
   /* ========================== 9. 视图切换 ========================== */
@@ -1269,56 +1272,92 @@
     });
   }
 
-  /* 从 state.images 组装下拉选项：每个标签最多列 5 个 tag；
-     超过阈值时折叠其余，避免一个 200 tag 的库把下拉撑爆。 */
+  /* 从 state.images 组装下拉选项。
+     wslc 的 image list 返回**扁平列表**（每行一个 Repository+Tag），没有
+     RepositoryTags 字段——所以这里先把扁平行按 Repository 聚合成 optgroup。
+     - Repository 非空 + Tag 非空且不是 <none> → "repo:tag"
+     - Repository 非空 + Tag 空/<none>        → 只用 "repo"（避免写出 repo:<none>）
+     - Repository 为空（dangling 镜像）        → 用短 ID 引用
+     每个 optgroup 最多列 5 个 tag，超过折叠，避免 200 tag 的库撑爆下拉。 */
   function buildImageOptions(images) {
     var list = Array.isArray(images) ? images.slice() : [];
-    list.sort(function (a, b) {
-      var ka = (a.RepositoryTags || []).join(',').toLowerCase();
-      var kb = (b.RepositoryTags || []).join(',').toLowerCase();
-      return ka < kb ? -1 : (ka > kb ? 1 : 0);
+    var groups = {};
+    var order = [];
+    for (var i = 0; i < list.length; i++) {
+      var img = list[i];
+      var repo = String(img.Repository || '').trim();
+      var tag = String(img.Tag || '').trim();
+      var key;
+      var ref;
+      if (repo) {
+        key = repo;
+        ref = tag && tag !== '<none>' ? repo + ':' + tag : repo;
+      } else {
+        var id = shortId(img.ID);
+        if (!id) continue;
+        key = '__local__' + id;
+        ref = id;
+      }
+      if (!groups[key]) { groups[key] = { repo: repo, items: [] }; order.push(key); }
+      var g = groups[key];
+      var dup = false;
+      for (var j = 0; j < g.items.length; j++) {
+        if (g.items[j].ref === ref) { dup = true; break; }
+      }
+      if (dup) continue;
+      var sizeTxt = img.Size ? String(img.Size) : '';
+      g.items.push({ ref: ref, size: sizeTxt });
+    }
+    order.sort(function (a, b) {
+      var la = a.toLowerCase();
+      var lb = b.toLowerCase();
+      return la < lb ? -1 : (la > lb ? 1 : 0);
     });
-    return list.map(function (img) {
-      var tags = Array.isArray(img.RepositoryTags) ? img.RepositoryTags : [];
-      var sizeTxt = img.SizeBytes ? fmtBytes(img.SizeBytes) : '';
+    var maxPerRepo = 5;
+    return order.map(function (key) {
+      var g = groups[key];
+      var label = g.repo || '本地镜像（无仓库名）';
       var children = [];
-      var maxPerRepo = 5;
-      if (tags.length === 0) {
-        children.push(h('option', { value: (img.Repository || '') + ':<none>', text: (img.Repository || '<none>') + '（无标签）' + (sizeTxt ? '  ·  ' + sizeTxt : '') }));
-      } else if (tags.length <= maxPerRepo) {
-        for (var i = 0; i < tags.length; i++) {
-          var t = tags[i];
+      if (g.items.length <= maxPerRepo) {
+        for (var k = 0; k < g.items.length; k++) {
+          var it = g.items[k];
           children.push(h('option', {
-            value: img.Repository + ':' + t,
-            text: img.Repository + ':' + t + (sizeTxt ? '  ·  ' + sizeTxt : '')
+            value: it.ref,
+            text: it.ref + (it.size ? '  ·  ' + it.size : '')
           }));
         }
       } else {
-        for (var j = 0; j < maxPerRepo; j++) {
-          var t2 = tags[j];
+        for (var m = 0; m < maxPerRepo; m++) {
+          var it2 = g.items[m];
           children.push(h('option', {
-            value: img.Repository + ':' + t2,
-            text: img.Repository + ':' + t2 + (sizeTxt ? '  ·  ' + sizeTxt : '')
+            value: it2.ref,
+            text: it2.ref + (it2.size ? '  ·  ' + it2.size : '')
           }));
         }
         children.push(h('option', {
           value: '',
           disabled: true,
-          text: '… 还有 ' + (tags.length - maxPerRepo) + ' 个标签（切手动输入可完整列出）'
+          text: '… 还有 ' + (g.items.length - maxPerRepo) + ' 个标签（切手动输入可完整列出）'
         }));
       }
-      return h('optgroup', { label: img.Repository + '（' + tags.length + '）' }, children);
+      return h('optgroup', { label: label + '（' + g.items.length + '）' }, children);
     });
   }
 
-  /* 更新运行容器弹窗的镜像下拉。images 缓存缺失时用占位提示，不阻塞弹窗。 */
+  /* 更新运行容器弹窗的镜像下拉。images 缓存缺失时用占位提示，不阻塞弹窗。
+     占位符的文案会根据加载状态切换：正在加载时提示"加载中…"，
+     加载完成后才显示"本机暂无镜像"，避免用户误以为下拉为空。 */
   function refreshRunImageOptions() {
     var sel = $('run-image-select');
     if (!sel) return;
     var imgs = state.images || [];
     var nodes = [];
     if (!imgs.length) {
-      nodes.push(h('option', { value: '', text: '（本机暂无镜像，请切到手动输入或先到「镜像」页拉取）', disabled: true }));
+      var loading = state.loading.images;
+      var text = loading
+        ? '（正在加载本机镜像…）'
+        : '（本机暂无镜像，请切到手动输入或先到「镜像」页拉取）';
+      nodes.push(h('option', { value: '', text: text, disabled: true }));
     } else {
       nodes = nodes.concat(buildImageOptions(imgs));
     }
@@ -1443,14 +1482,14 @@
     /* 打开弹窗时刷新一次镜像缓存，把结果回填到下拉。
        如果已经有缓存但超过 30 秒没更新，也会主动刷一次，
        避免用户没打开过「镜像」页时下拉为空。
-       注意：这里刻意用局部标志 `runDialogImagesLoading`，不污染
-       state.loading.images（后者由镜像视图独占），避免视图切换时
-       出现"加载中"竞态。 */
-    var runDialogImagesLoading = false;
+       这里复用 state.loading.images（而不另设局部标志），
+       让 refreshRunImageOptions 能根据加载状态切换占位符文案。
+       镜像视图短暂的"加载中"闪烁不影响数据，可接受。 */
     var imagesStale = !state.images || state.images.length === 0 ||
       !state.loadedAt.images || (Date.now() - state.loadedAt.images) > 30000;
     if (imagesStale && hasRuntime()) {
-      runDialogImagesLoading = true;
+      state.loading.images = true;
+      refreshRunImageOptions();   /* 立即显示"正在加载…"占位符 */
       invoke('ListImages', true).then(function (list) {
         state.images = Array.isArray(list) ? list : [];
         state.loaded.images = true;
@@ -1460,7 +1499,7 @@
         /* 如果此时用户又切到了「镜像」页，那里也会重绘 */
         if (state.view === 'images') renderImages();
       }).catch(function () { /* 忽略；下拉里已有占位提示 */ })
-        .then(function () { runDialogImagesLoading = false; });
+        .then(function () { state.loading.images = false; refreshRunImageOptions(); });
     }
 
     async function submit() {
@@ -2214,8 +2253,7 @@
     if (customEl) {
       custom = customEl.value.split(/\s+/).map(function (s) { return s.trim(); }).filter(Boolean);
     }
-    /* 常用镜像预设从页面上的 preset-row 表单读取（label + ref 两个 input） */
-    var presets = [];
+    /* 常用镜像预设从页面上的 preset-row 表单读取（label + ref 两个 input） */    var presets = [];
     var presetRows = document.querySelectorAll('#settings-content .preset-row');
     if (presetRows.length) {
       presetRows.forEach(function (row) {
@@ -2236,11 +2274,6 @@
       MirrorEnabled: pickBool('set-mirror-enabled', 'MirrorEnabled'),
       MirrorEndpoint: state.settings ? state.settings.MirrorEndpoint : 'docker.m.daocloud.io',
       CustomMirrors: custom,
-      ProxyEnabled: pickBool('set-proxy-enabled', 'ProxyEnabled'),
-      ProxyHTTP: pick('set-proxy-http', 'ProxyHTTP'),
-      ProxyHTTPS: pick('set-proxy-https', 'ProxyHTTPS'),
-      ProxyNO: pick('set-proxy-no', 'ProxyNO'),
-      ProxyHostLoopback: pick('set-proxy-lb', 'ProxyHostLoopback'),
       PresetImages: presets
     };
   }
@@ -2258,20 +2291,7 @@
     if (state.view === 'settings') renderSettings();
   }
 
-  async function testProxy(url) {
-    if (!url || !url.trim()) return;
-    state.settingsProbe['__proxy__' + url] = { busy: true };
-    if (state.view === 'settings') renderSettings();
-    try {
-      var probe = await invoke('TestProxy', url.trim());
-      state.settingsProbe['__proxy__' + url] = probe || { OK: false, Message: '无结果' };
-    } catch (e) {
-      state.settingsProbe['__proxy__' + url] = { OK: false, Message: normalizeError(e).message || String(e) };
-    }
-    if (state.view === 'settings') renderSettings();
-  }
-
-  /* 状态胶囊（Currently Active / Proxy Active / Normal / Off） */
+  /* 状态胶囊（Currently Active / Normal / Off） */
   function statusPill(cls, text) {
     return h('span', { class: 'status-pill ' + (cls || ''), title: text }, text);
   }
@@ -2456,28 +2476,20 @@
     var activeMirror = state.env && state.env.ActiveMirror ? state.env.ActiveMirror : (s.MirrorEnabled ? s.MirrorEndpoint : '');
     var nodes = [];
 
-    /* 说明卡：wslc 不支持 proxy / mirror 配置项。
+    /* 说明卡：wslc 不支持 registry mirror 配置项。
        做成可折叠的 details，避免每次打开设置页都堆一大堆文字。 */
     nodes.push(h('details', { class: 'card card-hint hint-compact', open: false },
       h('summary', { class: 'card-head', style: 'padding:10px 16px;' },
         h('span', { class: 'head-icon', 'aria-hidden': 'true', text: 'ℹ️' }),
-        h('span', { text: 'wslc 3.x 无 proxy / registry mirror 配置项，本工具通过镜像名改写与容器 -e 注入两种可行方式弥补' }),
+        h('span', { text: 'wslc 3.x 无 registry mirror 配置项，本工具通过镜像名改写弥补' }),
         h('span', { class: 'spacer' }),
         h('span', { class: 'faint', style: 'font-size:var(--fs-xs);', text: '点击展开详情' })
       ),
       h('div', { class: 'card-body', style: 'padding-top:0;' },
-        h('p', { class: 'hint-text', style: 'margin:0 0 6px;' },
+        h('p', { class: 'hint-text', style: 'margin:0;' },
           h('strong', { text: '镜像源改写' }),
           h('span', { text: '：输入 ' }), h('code', { text: 'alpine:3.20' }),
           h('span', { text: ' → 实际执行 ' }), h('code', { text: 'wslc image pull <mirror>/library/alpine:3.20' })
-        ),
-        h('p', { class: 'hint-text', style: 'margin:0;' },
-          h('strong', { text: '代理注入' }),
-          h('span', { text: '：仅对 ' }), h('code', { text: 'wslc run' }), h('span', { text: ' 以 ' }),
-          h('code', { text: '-e HTTP_PROXY=…' }), h('span', { text: ' 生效。容器内 ' }),
-          h('code', { text: '127.0.0.1' }), h('span', { text: ' 指向容器自身，宿主机代理须用 ' }),
-          h('code', { text: 'host.wslc.internal' }), h('span', { text: '（= 169.254.73.254）并监听 ' }),
-          h('code', { text: '0.0.0.0' })
         )
       )
     ));
@@ -2525,87 +2537,6 @@
             value: mirrors.join(' ') || '',
             placeholder: 'docker.io docker.m.daocloud.io docker.1panel.live（空格分隔）'
           })
-        )
-      )
-    ));
-
-    /* ============ 代理区块 ============ */
-    var proxyEnabled = !!s.ProxyEnabled;
-    var probeKey = '__proxy__' + (s.ProxyHTTP || '');
-    nodes.push(h('div', { class: 'section' },
-      h('div', { class: 'section-head' },
-        h('span', { class: 'head-icon', 'aria-hidden': 'true', text: '🛰' }),
-        h('div', { style: 'flex:1; min-width:0;' },
-          h('div', { class: 'section-title' }, '代理'),
-          h('div', { class: 'section-desc', text: '仅对「运行容器」注入 -e HTTP_PROXY；镜像拉取不受影响。' })
-        ),
-        proxyEnabled ? statusPill('proxy', 'Proxy Active') : statusPill('off', 'Normal'),
-        h('label', { class: 'switch' },
-          h('input', {
-            type: 'checkbox',
-            id: 'set-proxy-enabled',
-            checked: (proxyEnabled ? 'checked' : undefined),
-            onchange: function (ev) {
-              if (!state.settings) return;
-              state.settings.ProxyEnabled = ev.target.checked;
-              renderSettings();
-            }
-          }),
-          h('span', { class: 'track' }),
-          h('span', { class: 'switch-label', text: '代理注入' })
-        )
-      ),
-      h('div', { class: 'section-body' },
-        h('div', { class: 'form-section' },
-          h('span', { class: 'label', text: 'HTTP 代理' }),
-          h('input', {
-            id: 'set-proxy-http', type: 'text', class: 'input mono',
-            value: s.ProxyHTTP || '',
-            placeholder: 'http://host.wslc.internal:10808'
-          }),
-          h('button', {
-            class: 'btn btn-sm', type: 'button', text: '⚡ 测试',
-            onclick: function () { testProxy($('set-proxy-http').value); }
-          }),
-          h('span', { class: 'hint', text: '宿主机代理需监听 0.0.0.0；容器内 127.0.0.1 指向容器自身，请使用 host.wslc.internal。' }),
-          h('span', { class: 'label', text: 'HTTPS 代理' }),
-          h('input', {
-            id: 'set-proxy-https', type: 'text', class: 'input mono',
-            value: s.ProxyHTTPS || '',
-            placeholder: 'http://host.wslc.internal:10808'
-          }),
-          h('span'),
-          h('span', { class: 'label', text: 'NO_PROXY' }),
-          h('input', {
-            id: 'set-proxy-no', type: 'text', class: 'input mono',
-            value: s.ProxyNO || '',
-            placeholder: 'localhost,127.0.0.1'
-          }),
-          h('span'),
-          h('span', { class: 'label', text: 'hostLoopback' }),
-          h('input', {
-            id: 'set-proxy-lb', type: 'text', class: 'input mono',
-            value: s.ProxyHostLoopback || 'host.wslc.internal',
-            placeholder: 'host.wslc.internal'
-          }),
-          h('span')
-        ),
-        h('div', { style: 'margin-top:12px;' },
-          probeInline(state.settingsProbe[probeKey], 'HTTP 代理探测')
-        ),
-        h('div', { class: 'loopback-card', style: 'margin-top:14px;' },
-          h('span', { class: 'head-icon', 'aria-hidden': 'true', text: '⚠️' }),
-          h('div', { class: 'loopback-body' },
-            h('strong', { text: '注意：' }),
-            h('span', { text: '容器内 ' }), h('code', { text: '127.0.0.1' }),
-            h('span', { text: ' 指向容器自身，宿主机代理请使用 ' }),
-            h('code', { text: 'host.wslc.internal' }),
-            h('span', { text: '（= 169.254.73.254），并且宿主机代理需监听 ' }),
-            h('code', { text: '0.0.0.0' }),
-            h('span', { text: '，否则容器访问不到 loopback 上的代理。镜像拉取不受代理影响——wslc 的 registry 请求在宿主机侧，且忽略 ' }),
-            h('code', { text: 'HTTP_PROXY' }),
-            h('span', { text: '。' })
-          )
         )
       )
     ));

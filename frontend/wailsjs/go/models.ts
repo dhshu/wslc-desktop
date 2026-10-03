@@ -182,11 +182,6 @@ export namespace service {
 	    MirrorEnabled: boolean;
 	    MirrorEndpoint: string;
 	    CustomMirrors: string[];
-	    ProxyEnabled: boolean;
-	    ProxyHTTP: string;
-	    ProxyHTTPS: string;
-	    ProxyNO: string;
-	    ProxyHostLoopback: string;
 	    PresetImages: PresetImage[];
 	
 	    static createFrom(source: any = {}) {
@@ -199,11 +194,6 @@ export namespace service {
 	        this.MirrorEnabled = source["MirrorEnabled"];
 	        this.MirrorEndpoint = source["MirrorEndpoint"];
 	        this.CustomMirrors = source["CustomMirrors"];
-	        this.ProxyEnabled = source["ProxyEnabled"];
-	        this.ProxyHTTP = source["ProxyHTTP"];
-	        this.ProxyHTTPS = source["ProxyHTTPS"];
-	        this.ProxyNO = source["ProxyNO"];
-	        this.ProxyHostLoopback = source["ProxyHostLoopback"];
 	        this.PresetImages = this.convertValues(source["PresetImages"], PresetImage);
 	    }
 	
@@ -385,22 +375,6 @@ export namespace service {
 	    }
 	}
 	
-	export class ProxyProbe {
-	    OK: boolean;
-	    DurationMS: number;
-	    Message: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ProxyProbe(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.OK = source["OK"];
-	        this.DurationMS = source["DurationMS"];
-	        this.Message = source["Message"];
-	    }
-	}
 	export class PruneResult {
 	    Stdout: string;
 	

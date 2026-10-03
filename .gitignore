@@ -44,3 +44,4 @@ wslc-desktop-settings.json
 # ---- Project-local scratch ----
 issue_body.txt
 geoip.dat
+commit_msg.txt

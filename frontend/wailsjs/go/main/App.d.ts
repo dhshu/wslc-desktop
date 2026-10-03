@@ -73,5 +73,3 @@ export function TerminalResize(arg1:string,arg2:number,arg3:number):Promise<void
 export function TerminalWrite(arg1:string,arg2:string):Promise<void>;
 
 export function TestMirror(arg1:string):Promise<service.MirrorProbe>;
-
-export function TestProxy(arg1:string):Promise<service.ProxyProbe>;

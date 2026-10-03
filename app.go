@@ -367,8 +367,3 @@ func (a *App) SaveSettings(in service.AppSettings) (service.AppSettings, error) 
 func (a *App) TestMirror(endpoint string) (service.MirrorProbe, error) {
 	return a.svc.TestMirror(a.callContext(), endpoint)
 }
-
-// TestProxy probes whether the given proxy URL is reachable from the host.
-func (a *App) TestProxy(url string) (service.ProxyProbe, error) {
-	return a.svc.TestProxy(a.callContext(), url)
-}

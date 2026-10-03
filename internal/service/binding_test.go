@@ -49,7 +49,6 @@ var wantSignatures = map[string]string{
 	"LoadSettings":     "(ctx)->(AppSettings,error)",
 	"SaveSettings":     "(ctx,AppSettings)->(AppSettings,error)",
 	"TestMirror":       "(ctx,string)->(MirrorProbe,error)",
-	"TestProxy":        "(ctx,string)->(ProxyProbe,error)",
 }
 
 // TestServiceSignaturesMatchContract enforces the frozen method set, and with
@@ -172,7 +171,6 @@ func TestBoundStructsAreSerializable(t *testing.T) {
 	check("AppSettings", AppSettings{})
 	check("PresetImage", PresetImage{})
 	check("MirrorProbe", MirrorProbe{})
-	check("ProxyProbe", ProxyProbe{})
 
 	// The read models travel across the same boundary.
 	check("domain.Container", domain.Container{})

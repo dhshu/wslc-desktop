@@ -66,13 +66,9 @@ func TestApplyMirrorRewrite(t *testing.T) {
 // TestValidateSettingsNormalizes confirms UI input is clamped safely.
 func TestValidateSettingsNormalizes(t *testing.T) {
 	in := AppSettings{
-		MirrorEndpoint:    " https://docker.xuanyuan.me/",
-		MirrorEnabled:     true,
-		ProxyHTTP:         " http://host.wslc.internal:10808 ",
-		ProxyHTTPS:        "socks5://host.wslc.internal:10808",
-		ProxyNO:           " localhost, 127.0.0.1 ",
-		ProxyHostLoopback: "",
-		CustomMirrors:     []string{"a.example", "a.example", "  ", "b.example"},
+		MirrorEndpoint: " https://docker.xuanyuan.me/",
+		MirrorEnabled:  true,
+		CustomMirrors:  []string{"a.example", "a.example", "  ", "b.example"},
 	}
 	out, err := validateSettings(in)
 	if err != nil {
@@ -80,18 +76,6 @@ func TestValidateSettingsNormalizes(t *testing.T) {
 	}
 	if out.MirrorEndpoint != "docker.xuanyuan.me" {
 		t.Errorf("MirrorEndpoint = %q, want docker.xuanyuan.me", out.MirrorEndpoint)
-	}
-	if out.ProxyHTTP != "http://host.wslc.internal:10808" {
-		t.Errorf("ProxyHTTP = %q", out.ProxyHTTP)
-	}
-	if out.ProxyHTTPS != "socks5://host.wslc.internal:10808" {
-		t.Errorf("ProxyHTTPS = %q", out.ProxyHTTPS)
-	}
-	if out.ProxyNO != "localhost, 127.0.0.1" {
-		t.Errorf("ProxyNO = %q", out.ProxyNO)
-	}
-	if out.ProxyHostLoopback != defaultHostLoopback {
-		t.Errorf("ProxyHostLoopback = %q, want %q", out.ProxyHostLoopback, defaultHostLoopback)
 	}
 	if len(out.CustomMirrors) != 2 || out.CustomMirrors[0] != "a.example" || out.CustomMirrors[1] != "b.example" {
 		t.Errorf("CustomMirrors 去重失败：%v", out.CustomMirrors)
@@ -108,13 +92,6 @@ func TestValidateSettingsRejectsEmptyEndpoint(t *testing.T) {
 	}
 	if _, err := validateSettings(AppSettings{MirrorEndpoint: "x"}); err != nil {
 		t.Fatalf("正常地址不应返回错误：%v", err)
-	}
-}
-
-// TestValidateSettingsRejectsLongNO guards the NO_PROXY cap.
-func TestValidateSettingsRejectsLongNO(t *testing.T) {
-	if _, err := validateSettings(AppSettings{MirrorEndpoint: "x", ProxyNO: strings.Repeat("a", 600)}); err == nil {
-		t.Fatal("超长 NO_PROXY 应返回错误")
 	}
 }
 
@@ -135,31 +112,17 @@ func TestSettingsLoadSaveRoundTrip(t *testing.T) {
 	if !first.MirrorEnabled {
 		t.Error("默认应启用镜像改写")
 	}
-	if first.ProxyEnabled {
-		t.Error("默认不应启用代理注入")
-	}
-	if first.ProxyHostLoopback != defaultHostLoopback {
-		t.Errorf("默认 hostLoopback = %q", first.ProxyHostLoopback)
-	}
-	if first.ProxyNO != "localhost,127.0.0.1" {
-		t.Errorf("默认 NO_PROXY = %q", first.ProxyNO)
-	}
 
 	in := AppSettings{
-		MirrorEnabled:     false,
-		MirrorEndpoint:    "docker.1panel.live",
-		CustomMirrors:     []string{"docker.io", "docker.m.daocloud.io"},
-		ProxyEnabled:      true,
-		ProxyHTTP:         "http://host.wslc.internal:10808",
-		ProxyHTTPS:        "http://host.wslc.internal:10808",
-		ProxyNO:           "localhost",
-		ProxyHostLoopback: "host.wslc.internal",
+		MirrorEnabled:  false,
+		MirrorEndpoint: "docker.1panel.live",
+		CustomMirrors:  []string{"docker.io", "docker.m.daocloud.io"},
 	}
 	saved, err := s.Save(in)
 	if err != nil {
 		t.Fatalf("Save 失败：%v", err)
 	}
-	if !saved.ProxyEnabled || saved.MirrorEndpoint != "docker.1panel.live" {
+	if saved.MirrorEndpoint != "docker.1panel.live" {
 		t.Errorf("Save 返回值不符：%+v", saved)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -170,9 +133,6 @@ func TestSettingsLoadSaveRoundTrip(t *testing.T) {
 	loaded, err := fresh.Load()
 	if err != nil {
 		t.Fatalf("重新 Load 失败：%v", err)
-	}
-	if loaded.ProxyHTTP != in.ProxyHTTP || loaded.ProxyHTTPS != in.ProxyHTTPS {
-		t.Errorf("代理值未持久化：%+v", loaded)
 	}
 	if len(loaded.CustomMirrors) != 2 {
 		t.Errorf("CustomMirrors 未持久化：%v", loaded.CustomMirrors)
@@ -208,14 +168,11 @@ func TestServiceLoadSaveSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSettings 失败：%v", err)
 	}
-	if got.ProxyEnabled {
-		t.Error("首次加载不应启用代理")
-	}
+	_ = got
 
 	saved, err := svc.SaveSettings(context.Background(), AppSettings{
 		MirrorEnabled:  true,
 		MirrorEndpoint: "docker.1panel.live",
-		ProxyHTTP:      "http://host.wslc.internal:10808",
 	})
 	if err != nil {
 		t.Fatalf("SaveSettings 失败：%v", err)
@@ -228,7 +185,7 @@ func TestServiceLoadSaveSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("再次 LoadSettings 失败：%v", err)
 	}
-	if again.MirrorEndpoint != "docker.1panel.live" || again.ProxyHTTP == "" {
+	if again.MirrorEndpoint != "docker.1panel.live" {
 		t.Errorf("设置未持久化：%+v", again)
 	}
 
@@ -448,22 +405,6 @@ func TestNormalizeEndpointStripsSchemeAndSlash(t *testing.T) {
 	}
 }
 
-// TestNormalizeProxyURLAcceptsKnownSchemes keeps valid proxy URLs intact.
-func TestNormalizeProxyURLAcceptsKnownSchemes(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"", ""},
-		{"   ", ""},
-		{"http://host.wslc.internal:10808", "http://host.wslc.internal:10808"},
-		{"socks5://host.wslc.internal:10808", "socks5://host.wslc.internal:10808"},
-		{"socks://host.wslc.internal:10808", "socks://host.wslc.internal:10808"},
-		{"plain-host", "plain-host"},
-	} {
-		if got := normalizeProxyURL("HTTP", tc.in); got != tc.want {
-			t.Errorf("normalizeProxyURL(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 // TestBuiltInMirrorsSeedsCustomMirrors guarantees the defaults contain the
 // built-in list and that it starts with Docker Hub.
 func TestBuiltInMirrorsSeedsCustomMirrors(t *testing.T) {
@@ -497,9 +438,6 @@ func TestDefaultSettingsAreSane(t *testing.T) {
 	}
 	if d.MirrorEndpoint != "docker.m.daocloud.io" {
 		t.Errorf("默认镜像 = %q", d.MirrorEndpoint)
-	}
-	if d.ProxyEnabled {
-		t.Error("默认不应启用代理")
 	}
 	if len(d.CustomMirrors) != len(DefaultMirrors) {
 		t.Errorf("CustomMirrors = %d, want %d", len(d.CustomMirrors), len(DefaultMirrors))
@@ -546,22 +484,6 @@ func TestSplitHostSeparatesRegistryFromRepository(t *testing.T) {
 		if host != tc.wantHost || rest != tc.wantRest {
 			t.Errorf("splitHost(%q) = (%q, %q), want (%q, %q)", tc.ref, host, rest, tc.wantHost, tc.wantRest)
 		}
-	}
-}
-
-// TestProxyProbeEmptyInput short-circuits without dialing anything.
-func TestProxyProbeEmptyInput(t *testing.T) {
-	p := probeHTTPURL(context.Background(), "")
-	if p.OK || p.Message == "" {
-		t.Errorf("空代理地址应报告失败并给出原因：%+v", p)
-	}
-}
-
-// TestProxyProbeMissingPort reports a readable reason instead of dialing.
-func TestProxyProbeMissingPort(t *testing.T) {
-	p := probeHTTPURL(context.Background(), "http://host.wslc.internal")
-	if p.OK || p.Message == "" {
-		t.Errorf("缺少端口应报告失败：%+v", p)
 	}
 }
 

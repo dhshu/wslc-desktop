@@ -263,11 +263,10 @@ func (s *Service) ListTasks(ctx context.Context) ([]Task, error)
 func (s *Service) CancelTask(ctx context.Context, id string) error
 func (s *Service) StreamEvents(ctx context.Context) (string, error)
 
-// 设置（代理 / 镜像源，见 internal/service/settings.go）
+// 设置（镜像源，见 internal/service/settings.go）
 func (s *Service) LoadSettings(ctx context.Context) (AppSettings, error)
 func (s *Service) SaveSettings(ctx context.Context, in AppSettings) (AppSettings, error)
 func (s *Service) TestMirror(ctx context.Context, endpoint string) (MirrorProbe, error)
-func (s *Service) TestProxy(ctx context.Context, url string) (ProxyProbe, error)
 ```
 
 > 注意：上面的 `RemoveVolume` 形参表里有一个笔误 `name, , force bool`，

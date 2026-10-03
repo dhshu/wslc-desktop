@@ -158,7 +158,7 @@ Wails v2 用 `runtime.EventsEmit` 把每一行推给前端；前端 `EventsOn` �
 | 项 | 原因 | 状态 |
 | --- | --- | --- |
 | GUI 无法在本机渲染 | **本机 WebView2 运行时损坏**：直接跑 `msedgewebview2.exe` 退出码 13 且不建 profile；同机 Edge 154 正常 → 与我们的代码无关 | 需管理员重装 WebView2 Runtime |
-| 真实容器生命周期（run/logs/exec/stats） | wslc 会话 VM 的 DNS 绕过了宿主机本地代理，拉不到 Docker Hub 镜像 | 需让代理对会话 VM 可见，或使用本项目的镜像源改写 |
+| 真实容器生命周期（run/logs/exec/stats） | wslc 会话 VM 的 DNS 绕过了宿主机本地代理，拉不到 Docker Hub 镜像 | 使用本项目的镜像源改写 |
 | 交互式终端的 `-t` 行为 | 依赖真实容器 | 已实现 `-i -t` → 失败自动回落 `-i`，并有单测 |
 
 **重要**：以上三项都**不是代码缺陷**，且都已在代码里做了诚实的降级与说明

@@ -141,7 +141,3 @@ export function TerminalWrite(arg1, arg2) {
 export function TestMirror(arg1) {
   return window['go']['main']['App']['TestMirror'](arg1);
 }
-
-export function TestProxy(arg1) {
-  return window['go']['main']['App']['TestProxy'](arg1);
-}

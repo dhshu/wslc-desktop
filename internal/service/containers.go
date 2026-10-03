@@ -226,9 +226,6 @@ func (s *Service) RunContainer(ctx context.Context, opts RunContainerOptions) (s
 		}
 		args = append(args, "--name", value)
 	}
-	// Proxy env vars are injected before the user's own so an explicit -e
-	// HTTP_PROXY= wins, which is the expected override semantics.
-	args = append(args, s.proxyEnvArgs()...)
 	for _, entry := range opts.Env {
 		value, err := validateKeyValue("环境变量", entry)
 		if err != nil {
