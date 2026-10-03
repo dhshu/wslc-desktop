@@ -865,11 +865,7 @@
   }
 
   function setTabCount(view, n) {
-    var el = $('tabcount-' + view);
-    if (!el) return;
-    var s = (n === null || n === undefined || n === 0) ? '' : String(n);
-    el.textContent = s;
-    el.hidden = s === '';
+    /* no-op: tab-count pill removed from UI */
   }
 
   /* ========================== 9. 视图切换 ========================== */

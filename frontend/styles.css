@@ -296,18 +296,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   opacity: .85;
 }
 .tab[aria-selected="true"] .tab-icon { opacity: 1; }
-.tab-count {
-  font-family: var(--font-mono); font-size: var(--fs-xs);
-  color: var(--text-faint); background: var(--bg-elev-2);
-  border: 1px solid var(--border); border-radius: 999px;
-  padding: 0 6px; min-width: 18px; text-align: center;
-  margin-left: 2px;
-}
-.tab-count[hidden] { display: none; }
-.tab[aria-selected="true"] .tab-count {
-  color: var(--text); border-color: var(--accent-dim);
-  background: rgba(255,255,255,.08);
-}
 
 /* ============================ 主区域 ============================ */
 #main {
