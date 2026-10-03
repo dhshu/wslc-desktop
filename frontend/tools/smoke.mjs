@@ -707,12 +707,76 @@ let totalFailures = 0;
   await sleep(10);
   rep.check('关闭终端抽屉', env.byId.get('drawer-terminal').hidden === true);
 
+  /* ---- 运行容器弹窗：镜像下拉必须回填本机镜像 ---- */
+  /* 复现：从容器页直接点「运行容器…」，state.images 为空（用户没去过镜像页），
+     弹窗打开时镜像下拉必须调用 ListImages 并回填已有镜像，而不是停在空下拉。 */
+  const ctRunBtn = env.byId.get('btn-ct-run');
+  rep.check('容器页存在「运行容器…」按钮', !!ctRunBtn);
+  env.fire(ctRunBtn, 'click');
+  await sleep(60);
+  rep.check('「运行容器…」打开模态', env.byId.get('modal-root').hidden === false);
+  rep.check('模态标题为「运行新容器」', /运行新容器/.test(env.textOf(env.byId.get('modal-root'))));
+  /* 注意：index.html 里的 #run-image-select 是 hidden 占位 span，
+     真实元素由 runContainerDialog 动态创建并挂到模态内。
+     因此不能用 env.getEl（它会命中占位 span），改用 findAll 在模态内查找。 */
+  const sel = env.findAll(env.byId.get('modal-root'),
+    (e) => e.tagName === 'SELECT' && e.id === 'run-image-select')[0];
+  rep.check('镜像下拉存在', !!sel);
+  const allOpts = sel ? env.findAll(sel, (e) => e.tagName === 'OPTION') : [];
+  const optTexts = allOpts.map((n) => env.textOf(n));
+  const optValues = allOpts.map((n) => n.getAttribute('value'));
+  const grpLabels = sel ? sel.childNodes.filter((n) => n.tagName === 'OPTGROUP').map((n) => n.getAttribute('label')) : [];
+  rep.check('镜像下拉有实际镜像选项（非空、非占位符）',
+    optValues.includes('nginx:latest') && !/正在加载|暂无镜像/.test(optTexts.join('|')),
+    `options=${optTexts.length} groups=${grpLabels.join(',')}`);
+  /* 「手动输入」模式切换后，input 可见且下拉隐藏 */
+  /* 注意：index.html 里 #run-image-select / #run-image-input 是 hidden 占位 span
+     （为 selfcheck 服务），真实元素在模态内。用 findAll 而非 getEl 取真实元素。 */
+  const modeBtn = env.findAll(env.byId.get('modal-root'),
+    (e) => e.tagName === 'BUTTON' && e.getAttribute('aria-label') === '切换镜像输入方式')[0];
+  rep.check('存在「切换镜像输入方式」按钮', !!modeBtn);
+  const liveSelect = () => env.findAll(env.byId.get('modal-root'),
+    (e) => e.tagName === 'SELECT' && e.id === 'run-image-select')[0];
+  const liveInput = () => env.findAll(env.byId.get('modal-root'),
+    (e) => e.tagName === 'INPUT' && e.id === 'run-image-input')[0];
+  env.fire(modeBtn, 'click');
+  await sleep(10);
+  rep.check('切到手动输入：input 可见、select 隐藏',
+    liveInput() && !liveInput().hidden && liveSelect() && liveSelect().hidden);
+  env.fire(modeBtn, 'click');
+  await sleep(10);
+  rep.check('切回下拉模式：select 可见、input 隐藏',
+    liveSelect() && !liveSelect().hidden && liveInput() && liveInput().hidden);
+  /* Esc 关闭弹窗，不调用 RunContainer */
+  env.fireDoc('keydown', { key: 'Escape' });
+  await sleep(10);
+  rep.check('Esc 关闭运行容器弹窗', env.byId.get('modal-root').hidden === true);
+  rep.check('Esc 取消后不调用 RunContainer', called('RunContainer').length === 0);
+
   /* ---- 镜像视图 ---- */
   env.clickTab('images');
   await sleep(30);
   const imgText = env.textOf(env.byId.get('img-body'));
   rep.check('镜像行渲染 repository:tag 与短 ID', /nginx:latest/.test(imgText) && /sha256:111122/.test(imgText));
   rep.check('<none>:<none> 回退为短 ID', /sha256:55556/.test(imgText));
+
+  /* ---- 运行容器弹窗（热启动）：state.images 已有缓存，下拉应直接回填，不再请求 ---- */
+  env.clickTab('containers');
+  await sleep(10);
+  const listCallsBefore2 = called('ListImages').length;
+  env.fire(env.byId.get('btn-ct-run'), 'click');
+  await sleep(30);
+  rep.check('热启动：弹窗打开即调用镜像下拉回填（来自缓存，不再调 ListImages）',
+    called('ListImages').length === listCallsBefore2,
+    `before=${listCallsBefore2} after=${called('ListImages').length}`);
+  const sel2 = env.findAll(env.byId.get('modal-root'),
+    (e) => e.tagName === 'SELECT' && e.id === 'run-image-select')[0];
+  const opts2 = sel2 ? env.findAll(sel2, (e) => e.tagName === 'OPTION') : [];
+  rep.check('热启动：镜像下拉含已有镜像', opts2.some((o) => o.getAttribute('value') === 'nginx:latest'),
+    `options=${opts2.length}`);
+  env.fireDoc('keydown', { key: 'Escape' });
+  await sleep(10);
+
   env.byId.get('img-pull-ref').value = 'redis:7';
   env.fire(env.byId.get('btn-img-pull'), 'click');
   await sleep(40);

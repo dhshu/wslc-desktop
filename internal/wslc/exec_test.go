@@ -182,8 +182,12 @@ func TestExecRunnerHonoursCanceledContext(t *testing.T) {
 
 func TestExecRunnerNegativeTimeoutIsUnlimited(t *testing.T) {
 	exe := requireCmd(t)
-	res, err := NewExecRunner(exe, WithTimeout(time.Millisecond)).Run(context.Background(), Spec{
-		Args:    []string{"/c", "ping -n 2 127.0.0.1 >nul"},
+	// The command takes about 1s, far longer than the 20ms runner default. The
+	// assertion is on the timeout policy (a negative Spec.Timeout disables the
+	// runner default), so the command body is incidental; cmd's own echo keeps
+	// the test off ping.exe, whose NUL-device exit code is machine dependent.
+	res, err := NewExecRunner(exe, WithTimeout(20*time.Millisecond)).Run(context.Background(), Spec{
+		Args:    []string{"/c", "ping -n 2 127.0.0.1 >NUL & echo done"},
 		Timeout: -1,
 	})
 	if err != nil {

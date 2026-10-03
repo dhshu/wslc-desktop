@@ -54,6 +54,11 @@ func (e *ExitError) Error() string {
 // wordings of each condition are matched.
 func (e *ExitError) Unwrap() error {
 	text := strings.ToUpper(e.Stderr + "\n" + e.Stdout)
+	// E_ACCESSDENIED is a Windows-side access refusal (vmcompute stopped, or a
+	// non-container command run without a session). It is NOT an "object not
+	// found": classifying it as ErrNotFound would mislead the UI and the tests,
+	// because every volume/network/container probe on a locked-down machine
+	// would start to look like a missing object.
 	switch {
 	case strings.Contains(text, "HCS_E_SERVICE_NOT_AVAILABLE"),
 		strings.Contains(text, "无法启动操作"),

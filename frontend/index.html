@@ -357,9 +357,10 @@
       <button class="btn btn-primary" type="button" id="btn-settings-save"
               title="保存代理与镜像源设置" aria-label="保存设置">💾 保存</button>
       <button class="btn" type="button" id="btn-settings-reload"
-              title="重新加载设置" aria-label="重新加载设置">↻ 重载</button>
+              title="重新加载设置（放弃未保存的修改）" aria-label="重新加载设置">↻ 重载</button>
       <span class="toolbar-spacer"></span>
-      <span class="muted" id="settings-status">—</span>
+      <span id="settings-dirty" class="status-pill off" hidden title="有未保存的修改">未保存</span>
+      <span class="muted mono" id="settings-status">—</span>
     </div>
     <div id="settings-content" class="env-content"></div>
   </section>

@@ -95,6 +95,74 @@ func TestValidateSettingsRejectsEmptyEndpoint(t *testing.T) {
 	}
 }
 
+// TestValidateSettingsAllowsMirrorsWithAndWithoutPort pins the real-world
+// registry shapes the UI offers: the built-in mirror list is bare hostnames
+// (docker.io), while Aliyun's accelerator endpoint is host:port. Both must
+// validate, or the settings view would reject every built-in preset.
+func TestValidateSettingsAllowsMirrorsWithAndWithoutPort(t *testing.T) {
+	for _, endpoint := range []string{
+		"docker.io",
+		"docker.m.daocloud.io",
+		"<your-id>.mirror.aliyuncs.com",
+		"registry-1.docker.io:443",
+		"127.0.0.1:5000",
+	} {
+		out, err := validateSettings(AppSettings{MirrorEndpoint: endpoint, CustomMirrors: []string{endpoint}})
+		if err != nil {
+			t.Errorf("validateSettings(%q) 返回错误：%v", endpoint, err)
+			continue
+		}
+		if out.MirrorEndpoint != endpoint {
+			t.Errorf("MirrorEndpoint = %q, want %q", out.MirrorEndpoint, endpoint)
+		}
+		if len(out.CustomMirrors) != 1 || out.CustomMirrors[0] != endpoint {
+			t.Errorf("CustomMirrors = %v, want [%s]", out.CustomMirrors, endpoint)
+		}
+	}
+}
+
+// TestTestMirrorRejectsIllegalChars checks the probe rejects whitespace and
+// empty input while accepting legal bare-host and host:port registries.
+func TestTestMirrorRejectsIllegalChars(t *testing.T) {
+	cases := []struct {
+		endpoint string
+		// reject reports whether the probe must refuse the input before ever
+		// invoking wslc.
+		reject bool
+		reason string
+	}{
+		{"", true, "空"},
+		{"   ", true, "空"},
+		{"a b.example", true, "非法字符"},
+		{"a\tb.example", true, "非法字符"},
+		{"docker.io", false, ""},
+		{"127.0.0.1:5000", false, ""},
+		{"<your-id>.mirror.aliyuncs.com", false, ""},
+	}
+	for _, tc := range cases {
+		// A nil runner makes the probe fail with "未配置 wslc runner" after
+		// the input checks, so these cases stay deterministic: they prove the
+		// validation accepts/rejects the right inputs without needing the
+		// real wslc binary.
+		s := &Service{}
+		probe, err := s.TestMirror(context.Background(), tc.endpoint)
+		if err != nil {
+			t.Fatalf("TestMirror(%q) 返回错误：%v", tc.endpoint, err)
+			continue
+		}
+		if tc.reject {
+			if probe.OK {
+				t.Errorf("TestMirror(%q) 未拒绝，OK=%v", tc.endpoint, probe.OK)
+			}
+			if !strings.Contains(probe.Message, tc.reason) {
+				t.Errorf("TestMirror(%q) Message = %q, want it to mention %q", tc.endpoint, probe.Message, tc.reason)
+			}
+		} else if strings.Contains(probe.Message, "非法字符") {
+			t.Errorf("TestMirror(%q) 误判为非法字符：%v", tc.endpoint, probe.Message)
+		}
+	}
+}
+
 // TestSettingsLoadSaveRoundTrip writes to a temp file and reads it back, which
 // is the only part of this module that actually touches disk.
 func TestSettingsLoadSaveRoundTrip(t *testing.T) {

@@ -222,7 +222,7 @@ func (s *Service) probePullReachability(ctx context.Context) string {
 
 	return "本机无法直连 Docker Hub（wslc 无 registry mirror 配置）。已验证可用的镜像：" +
 		mirror + "/library/alpine:3.20。" +
-		"完整镜像路径用法示例：wslc pull " + mirror + "/library/alpine:3.20。" +
+		"完整镜像路径用法示例：wslc image pull " + mirror + "/library/alpine:3.20。" +
 		"上游议题：microsoft/WSL#40951。"
 }
 

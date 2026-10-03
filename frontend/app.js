@@ -413,6 +413,33 @@
     if (el) el.textContent = '更新于 ' + fmtTime(new Date());
   }
 
+  /* 设置页的「未保存」指示。状态在表单变化时点亮，在保存/重载后清除。 */
+  function markSettingsDirty(dirty) {
+    var pill = $('settings-dirty');
+    if (!pill) return;
+    if (dirty) {
+      pill.hidden = false;
+      pill.className = 'status-pill busy';
+    } else {
+      pill.hidden = true;
+      pill.className = 'status-pill off';
+    }
+  }
+  function markSettingsClean() { markSettingsDirty(false); }
+
+  /* 表单任何字段变化都会点亮「未保存」指示。用 input 事件一次监听，
+     在设置容器上做事件委托，避免逐个 input 绑定。 */
+  function watchSettingsDirty() {
+    var root = $('settings-content');
+    if (!root) return;
+    root.addEventListener('input', function (ev) {
+      var t = ev.target;
+      if (!t || !root.contains(t)) return;
+      var tag = String(t.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') markSettingsDirty(true);
+    });
+  }
+
   /* ========================== 5. 横幅 ========================== */
 
   function renderBanners() {
@@ -1340,11 +1367,13 @@
     });
   }
 
-  /* 更新运行容器弹窗的镜像下拉。images 缓存缺失时用占位提示，不阻塞弹窗。
+  /* 更新运行容器弹窗的镜像下拉。必须传入真实的 select 元素：弹窗未挂载前
+     imageSelect 不在 DOM 里，$('run-image-select') 会命中 index.html 里给
+     selfcheck 用的 hidden 占位 span，导致下拉永远填不进选项。
+     images 缓存缺失时用占位提示，不阻塞弹窗。
      占位符的文案会根据加载状态切换：正在加载时提示"加载中…"，
      加载完成后才显示"本机暂无镜像"，避免用户误以为下拉为空。 */
-  function refreshRunImageOptions() {
-    var sel = $('run-image-select');
+  function refreshRunImageOptions(sel) {
     if (!sel) return;
     var imgs = state.images || [];
     var nodes = [];
@@ -1384,7 +1413,7 @@
         imageInput.hidden = imageMode !== 'input';
         imageSelect.hidden = imageMode !== 'select';
         imageModeSwitch.textContent = imageMode === 'select' ? '手动输入' : '下拉已有';
-        if (imageMode === 'select') refreshRunImageOptions();
+        if (imageMode === 'select') refreshRunImageOptions(imageSelect);
       }
     });
 
@@ -1414,7 +1443,9 @@
       tty: h('input', { type: 'checkbox', id: 'run-tty' })
     };
     imageInput.hidden = true;
-    refreshRunImageOptions();
+    // 注意：不能在这里调用 refreshRunImageOptions(imageSelect)——imageSelect
+    // 此时还没挂进 DOM，$('run-image-select') 会命中 index.html 里的 hidden
+    // 占位 span。首屏渲染放到 mountModal 之后（见下方）。
 
     var errBox = h('pre', { class: 'modal-detail', hidden: true });
 
@@ -1475,6 +1506,11 @@
       onKeyDown: function (ev) { if (ev.key === 'Enter' && ev.target && ev.target.tagName === 'INPUT') { ev.preventDefault(); submit(); } }
     });
 
+    /* 首屏回填镜像下拉。必须在 mountModal 之后调用——此时 imageSelect 才
+       真正挂进 DOM；mountModal 之前调用会写到 index.html 的 hidden 占位
+       span 上，下拉永远填不进选项。 */
+    refreshRunImageOptions(imageSelect);
+
     /* 打开弹窗时刷新一次镜像缓存，把结果回填到下拉。
        如果已经有缓存但超过 30 秒没更新，也会主动刷一次，
        避免用户没打开过「镜像」页时下拉为空。
@@ -1485,17 +1521,17 @@
       !state.loadedAt.images || (Date.now() - state.loadedAt.images) > 30000;
     if (imagesStale && hasRuntime()) {
       state.loading.images = true;
-      refreshRunImageOptions();   /* 立即显示"正在加载…"占位符 */
+      refreshRunImageOptions(imageSelect);   /* 立即显示"正在加载…"占位符 */
       invoke('ListImages', true).then(function (list) {
         state.images = Array.isArray(list) ? list : [];
         state.loaded.images = true;
         state.loadedAt.images = Date.now();
         setTabCount('images', state.images.length);
-        refreshRunImageOptions();
+        refreshRunImageOptions(imageSelect);
         /* 如果此时用户又切到了「镜像」页，那里也会重绘 */
         if (state.view === 'images') renderImages();
       }).catch(function () { /* 忽略；下拉里已有占位提示 */ })
-        .then(function () { state.loading.images = false; refreshRunImageOptions(); });
+        .then(function () { state.loading.images = false; refreshRunImageOptions(imageSelect); });
     }
 
     async function submit() {
@@ -2225,6 +2261,7 @@
       }
       setStatus('设置已保存');
       touchLast();
+      markSettingsClean();
     } catch (e) {
       state.error[key] = normalizeError(e);
       fail('SaveSettings', e, { showDetail: true });
@@ -2486,6 +2523,11 @@
           h('strong', { text: '镜像源改写' }),
           h('span', { text: '：输入 ' }), h('code', { text: 'alpine:3.20' }),
           h('span', { text: ' → 实际执行 ' }), h('code', { text: 'wslc image pull <mirror>/library/alpine:3.20' })
+        ),
+        h('p', { class: 'hint-text', style: 'margin:8px 0 0;' },
+          h('strong', { text: '测试拉取' }),
+          h('span', { text: '：镜像站的「测试」用 ' }), h('code', { text: 'wslc image pull <mirror>/library/hello-world:latest' }),
+          h('span', { text: ' 探测；失败常见原因是镜像站不可达或该仓库不存在。' })
         )
       )
     ));
@@ -3319,6 +3361,7 @@
     if (settingsSave) settingsSave.addEventListener('click', saveSettings);
     var settingsReload = $('btn-settings-reload');
     if (settingsReload) settingsReload.addEventListener('click', loadSettings);
+    watchSettingsDirty();
 
     /* 日志抽屉 */
     var logsClose = $('logs-close');

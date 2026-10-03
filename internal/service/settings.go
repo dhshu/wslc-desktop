@@ -294,7 +294,10 @@ func (s *Service) TestMirror(ctx context.Context, endpoint string) (MirrorProbe,
 	if host == "" {
 		return MirrorProbe{Endpoint: endpoint, OK: false, DurationMS: 0, Message: "镜像地址为空"}, nil
 	}
-	if strings.ContainsAny(host, ": \t\r\n\x00") && !strings.Contains(host, ":") {
+	// Ports are legal: some mirror endpoints (for example Aliyun's dedicated
+	// accelerators) are addressed as host:port. Whitespace and control
+	// characters remain invalid.
+	if strings.ContainsAny(host, " \t\r\n\x00") {
 		return MirrorProbe{Endpoint: endpoint, OK: false, Message: "镜像地址含非法字符"}, nil
 	}
 	probeRef := host + "/library/hello-world:latest"
