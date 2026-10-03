@@ -6,7 +6,7 @@
   "info": {
     "companyName": "wslc-desktop",
     "productName": "wslc Desktop",
-    "productVersion": "1.0.0",
+    "productVersion": "0.0.1",
     "copyright": "Copyright (c) 2025 wslc-desktop",
     "comments": "wslc Desktop — Windows 容器 CLI 图形前端"
   },
