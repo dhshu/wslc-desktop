@@ -116,7 +116,7 @@ body {
   margin: 0;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;                /* 严格视口高度，配合 overflow:hidden 让内部区域滚动 */
   background: var(--bg);
   color: var(--text);
   font: var(--fs-md)/1.45 var(--font-ui);
@@ -261,7 +261,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .banner-warn    { background: var(--warn-bg);   border-left: 3px solid var(--warn); }
 .banner-info    { background: var(--info-bg);   border-left: 3px solid var(--info); }
 
-/* ============================ 标签页（cc-switch 风胶囊）============================ */
+/* ============================ 标签页（胶囊式）============================ */
 .tabs {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: 6px;
@@ -523,12 +523,15 @@ tr.state-row td {
   .spinner { animation-duration: 2.4s; }
 }
 
-/* ============================ 环境自检 & 卡片（cc-switch 风）============================ */
+/* ============================ 环境自检 & 卡片 ============================ */
 .env-content {
-  flex: 1 1 auto; min-height: 0; overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;               /* 允许 flex 收缩，让内容超出时出现滚动条 */
+  overflow: auto;              /* 竖向 + 横向都可滚 */
   padding: 16px;
-  display: flex; flex-direction: column; gap: 16px;
+  display: block;              /* 让 .section 自然堆叠，超出部分触发滚动条 */
 }
+.env-content > * + * { margin-top: 16px; }   /* 补偿 gap（因为不再是 flex） */
 
 .card {
   background: var(--bg-elev);
@@ -556,7 +559,7 @@ tr.state-row td {
 .card-hint .card-head { background: var(--info-bg); color: var(--info); }
 .hint-text { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
 
-/* ============================ 设置视图（cc-switch 风）============================ */
+/* ============================ 设置视图 ============================ */
 
 /* 顶部工具条：保存按钮 + 状态 */
 .settings-toolbar {
@@ -699,7 +702,7 @@ tr.state-row td {
 .status-pill.busy::before { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: .4 } 50% { opacity: 1 } }
 
-/* 切换开关（iOS / cc-switch 风） */
+/* 切换开关（iOS 风） */
 .switch {
   display: inline-flex; align-items: center;
   gap: 10px; cursor: pointer; user-select: none;

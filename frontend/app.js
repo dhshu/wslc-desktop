@@ -1424,12 +1424,22 @@
       onKeyDown: function (ev) { if (ev.key === 'Enter' && ev.target && ev.target.tagName === 'INPUT') { ev.preventDefault(); submit(); } }
     });
 
-    /* 打开弹窗时如果还没有镜像缓存，补一次加载并把结果回填到下拉。 */
-    if (state.images && state.images.length === 0 && hasRuntime()) {
+    /* 打开弹窗时刷新一次镜像缓存，把结果回填到下拉。
+       如果已经有缓存但超过 30 秒没更新，也会主动刷一次，
+       避免用户没打开过「镜像」页时下拉为空。 */
+    var imagesStale = !state.images || state.images.length === 0 ||
+      !state.loadedAt.images || (Date.now() - state.loadedAt.images) > 30000;
+    if (imagesStale && hasRuntime()) {
+      state.loading.images = true;
       invoke('ListImages', true).then(function (list) {
         state.images = Array.isArray(list) ? list : [];
+        state.loaded.images = true;
+        state.loadedAt.images = Date.now();
         refreshRunImageOptions();
-      }).catch(function () { /* 忽略；下拉里已有占位提示 */ });
+        /* 如果此时用户又切到了「镜像」页，那里也会重绘 */
+        if (state.view === 'images') renderImages();
+      }).catch(function () { /* 忽略；下拉里已有占位提示 */ })
+        .then(function () { state.loading.images = false; });
     }
 
     async function submit() {
@@ -2245,7 +2255,7 @@
     return h('span', { class: 'status-pill ' + (cls || ''), title: text }, text);
   }
 
-  /* 内联探测结果（cc-switch 风格的小胶囊，替代原来的 .probe 块） */
+  /* 内联探测结果（小胶囊，替代原来的 .probe 块） */
   function probeInline(probe, label) {
     if (!probe) return null;
     if (probe.busy) return h('span', { class: 'status-pill busy', title: label }, '探测中…');
@@ -2449,7 +2459,7 @@
       )
     ));
 
-    /* ============ 镜像源区块（cc-switch 风卡片墙）============ */
+    /* ============ 镜像源区块（卡片墙）============ */
     var mirrors = s.CustomMirrors && s.CustomMirrors.length ? s.CustomMirrors : [];
     var mirrorEnabled = s.MirrorEnabled !== false;
     nodes.push(h('div', { class: 'section' },

@@ -4,13 +4,15 @@
 
 `wslc.exe` 是微软随 WSL ≥ 2.9.3 分发的 Linux 容器 CLI，可以在 Windows 上构建、运行和管理 Linux 容器，**无需 Docker Desktop**。本项目把它的核心操作包装成图形界面，补齐 wslc 缺失的镜像源与代理配置能力。
 
-界面参考 [cc-switch](https://ccswitch.io/docs/) 的卡片墙风格：深色主题、圆角卡片、状态胶囊、iOS 风格切换开关。截图见 [docs/screenshot.png](docs/screenshot.png)。
+界面采用深色主题、圆角卡片、状态胶囊、iOS 风格切换开关。截图见 [docs/screenshot.png](docs/screenshot.png)。
+
+> **说明**：本项目的全部代码（含前端 HTML/CSS/JS、后端 Go、文档、测试脚本、构建脚本、GitHub Actions 工作流等）均由 AI 助手在人工提示与审阅下生成，未经人工独立手写。作者负责需求澄清、事实核验（本机实测命令输出、wslc 行为、错误分类）、代码审阅与最终发布。
 
 ## 亮点
 
 - **零前端构建**：纯静态 HTML/CSS/JS，没有 npm、没有 webpack。产物约 12 MB 单文件 exe。
 - **零 Go 依赖注入**：所有后端代码都是标准库 + Wails v2，`internal/service` 完全不 import Wails，可纯 Go 测试。
-- **cc-switch 风格设置页**：镜像源卡片墙（可点击激活 + 独立探测）、代理 iOS 开关 + `host.wslc.internal` 提示、常用镜像预设编辑器（30 条内置、可增删改）。
+- **卡片墙风格设置页**：镜像源卡片墙（可点击激活 + 独立探测）、代理 iOS 开关 + `host.wslc.internal` 提示、常用镜像预设编辑器（30 条内置、可增删改）。
 - **完整能力**：容器 / 镜像 / 卷 / 网络 / 环境自检 / 任务 / 设置 七页视图；日志跟随 + 交互式终端抽屉。
 - **破坏性操作二次确认**：删除、prune、kill 一律弹确认框。
 - **JSON 优先 + 表格回退**解析器，带多语言表头别名（wslc 的表头会随系统语言本地化）。
@@ -189,7 +191,7 @@ wslc 当前**没有 registry mirror 配置项**（[microsoft/WSL#40951](https://
 
 ## 视觉风格
 
-设置页参考 [cc-switch](https://ccswitch.io/docs/) 的卡片墙风格：
+设置页采用卡片墙风格：
 
 - 圆角卡片（`--r-lg` = 10px）+ 顶部渐变条（激活时蓝→青→绿）
 - iOS 风格切换开关（`.switch`）用于「镜像改写」/「代理注入」
@@ -219,7 +221,6 @@ wslc 当前**没有 registry mirror 配置项**（[microsoft/WSL#40951](https://
 - [microsoft/WSL#40951 — 请求支持 registry mirror](https://github.com/microsoft/WSL/issues/40951)
 - [microsoft/WSL#8693 — HCS_E_SERVICE_NOT_AVAILABLE](https://github.com/microsoft/WSL/issues/8693)
 - [Wails v2 文档](https://wails.io/docs/gettingstarted/installation/)
-- [cc-switch 文档](https://ccswitch.io/docs/) — 设置页 UI 风格参考
 
 ## 贡献
 
