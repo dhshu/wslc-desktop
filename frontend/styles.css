@@ -196,23 +196,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ============================ 按钮 ============================ */
 .btn {
   display: inline-flex; align-items: center; gap: 5px;
-  height: 24px; padding: 0 9px;
+  height: 26px; padding: 0 10px;
   background: var(--bg-elev-2);
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   color: var(--text); font-size: var(--fs-sm);
   cursor: pointer; white-space: nowrap;
-  transition: background .12s, border-color .12s;
+  transition: background .12s, border-color .12s, box-shadow .12s;
 }
 .btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--text-faint); }
 .btn:active:not(:disabled) { background: var(--bg-active); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
 .btn-primary {
-  background: var(--accent); border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-hi) 0%, var(--accent) 100%);
+  border-color: var(--accent-hi);
   color: var(--text-invert); font-weight: 600;
+  box-shadow: 0 1px 0 rgba(0,0,0,.15), 0 2px 6px rgba(0,0,0,.2);
 }
-.btn-primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); }
+.btn-primary:hover:not(:disabled) { background: linear-gradient(180deg, var(--accent) 0%, var(--accent-hi) 100%); border-color: var(--accent); }
 
 .btn-danger {
   background: var(--danger); border-color: var(--danger);
@@ -264,16 +266,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ============================ 标签页（胶囊式）============================ */
 .tabs {
   flex: 0 0 auto;
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 12px;
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 10px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
 }
 
 .tab {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 7px 14px 7px 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px 6px 10px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 999px;
@@ -284,14 +286,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tab:hover { color: var(--text); background: var(--bg-hover); }
 .tab[aria-selected="true"] {
   color: var(--accent);
-  background: var(--accent-dim);
-  border-color: var(--accent-dim);
+  background: linear-gradient(180deg, var(--accent-dim) 0%, rgba(0,0,0,.15) 100%);
+  border-color: var(--accent);
   font-weight: 600;
+  box-shadow: 0 1px 0 var(--accent-dim) inset, 0 2px 6px rgba(0,0,0,.25);
 }
 .tab-icon {
   font-size: 15px; line-height: 1;
-  opacity: .9;
+  opacity: .85;
 }
+.tab[aria-selected="true"] .tab-icon { opacity: 1; }
 .tab-count {
   font-family: var(--font-mono); font-size: var(--fs-xs);
   color: var(--text-faint); background: var(--bg-elev-2);
@@ -333,15 +337,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .req { color: var(--danger); font-style: normal; }
 
 .input {
-  height: 24px; padding: 0 7px; min-width: 0;
+  height: 26px; padding: 0 9px; min-width: 0;
   background: var(--bg-input);
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   color: var(--text);
+  transition: border-color .12s, box-shadow .12s;
 }
 .input::placeholder { color: var(--text-faint); }
 .input:hover { border-color: var(--text-faint); }
-.input:focus { border-color: var(--border-focus); outline: none; }
+.input:focus { border-color: var(--border-focus); outline: none; box-shadow: 0 0 0 3px rgba(86,184,168,.18); }
 input[type="search"].input { min-width: 190px; }
 .inline-form { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 
@@ -355,16 +360,21 @@ input[type="search"].input { min-width: 190px; }
 
 .segmented {
   display: inline-flex; border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm); overflow: hidden;
+  border-radius: var(--r-md); overflow: hidden;
+  background: var(--bg-input);
 }
 .seg {
-  height: 24px; padding: 0 11px; border: 0;
-  background: var(--bg-elev-2); color: var(--text-dim);
+  height: 26px; padding: 0 12px; border: 0;
+  background: transparent; color: var(--text-dim);
   font-size: var(--fs-sm); cursor: pointer;
+  transition: background .12s, color .12s;
 }
-.seg + .seg { border-left: 1px solid var(--border-strong); }
+.seg + .seg { border-left: 1px solid var(--border); }
 .seg:hover { background: var(--bg-hover); color: var(--text); }
-.seg.is-active { background: var(--accent-dim); color: var(--text); font-weight: 600; }
+.seg.is-active {
+  background: linear-gradient(180deg, var(--accent-hi) 0%, var(--accent) 100%);
+  color: var(--text-invert); font-weight: 600;
+}
 
 /* 表单面板（构建镜像） */
 .panel {
@@ -558,6 +568,18 @@ tr.state-row td {
 .card-hint { border-color: var(--info); }
 .card-hint .card-head { background: var(--info-bg); color: var(--info); }
 .hint-text { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.card-hint.hint-compact { padding: 0; }
+.card-hint.hint-compact > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  font-size: var(--fs-sm); font-weight: 500;
+}
+.card-hint.hint-compact > summary::-webkit-details-marker { display: none; }
+.card-hint.hint-compact > summary::after {
+  content: "▸"; margin-left: 4px; color: var(--text-faint);
+  transition: transform .15s; display: inline-block;
+}
+.card-hint.hint-compact[open] > summary::after { transform: rotate(90deg); }
+.card-hint.hint-compact[open] > summary { border-bottom: 1px solid var(--border); }
 
 /* ============================ 设置视图 ============================ */
 

@@ -1426,20 +1426,25 @@
 
     /* 打开弹窗时刷新一次镜像缓存，把结果回填到下拉。
        如果已经有缓存但超过 30 秒没更新，也会主动刷一次，
-       避免用户没打开过「镜像」页时下拉为空。 */
+       避免用户没打开过「镜像」页时下拉为空。
+       注意：这里刻意用局部标志 `runDialogImagesLoading`，不污染
+       state.loading.images（后者由镜像视图独占），避免视图切换时
+       出现"加载中"竞态。 */
+    var runDialogImagesLoading = false;
     var imagesStale = !state.images || state.images.length === 0 ||
       !state.loadedAt.images || (Date.now() - state.loadedAt.images) > 30000;
     if (imagesStale && hasRuntime()) {
-      state.loading.images = true;
+      runDialogImagesLoading = true;
       invoke('ListImages', true).then(function (list) {
         state.images = Array.isArray(list) ? list : [];
         state.loaded.images = true;
         state.loadedAt.images = Date.now();
+        setTabCount('images', state.images.length);
         refreshRunImageOptions();
         /* 如果此时用户又切到了「镜像」页，那里也会重绘 */
         if (state.view === 'images') renderImages();
       }).catch(function () { /* 忽略；下拉里已有占位提示 */ })
-        .then(function () { state.loading.images = false; });
+        .then(function () { runDialogImagesLoading = false; });
     }
 
     async function submit() {
@@ -2435,26 +2440,28 @@
     var activeMirror = state.env && state.env.ActiveMirror ? state.env.ActiveMirror : (s.MirrorEnabled ? s.MirrorEndpoint : '');
     var nodes = [];
 
-    /* 说明卡：wslc 不支持 proxy / mirror 配置项 */
-    nodes.push(h('div', { class: 'card card-hint' },
-      h('div', { class: 'card-head' },
+    /* 说明卡：wslc 不支持 proxy / mirror 配置项。
+       做成可折叠的 details，避免每次打开设置页都堆一大堆文字。 */
+    nodes.push(h('details', { class: 'card card-hint hint-compact', open: false },
+      h('summary', { class: 'card-head', style: 'padding:10px 16px;' },
         h('span', { class: 'head-icon', 'aria-hidden': 'true', text: 'ℹ️' }),
-        h('span', { text: 'wslc 3.x 无 proxy / registry mirror 配置项（microsoft/WSL#40951）' })
+        h('span', { text: 'wslc 3.x 无 proxy / registry mirror 配置项，本工具通过镜像名改写与容器 -e 注入两种可行方式弥补' }),
+        h('span', { class: 'spacer' }),
+        h('span', { class: 'faint', style: 'font-size:var(--fs-xs);', text: '点击展开详情' })
       ),
-      h('div', { class: 'card-body' },
-        h('p', { class: 'hint-text', text: '本工具通过两种可行方式弥补：' }),
-        h('ol', { class: 'hint-text', style: 'margin:8px 0 0 20px; line-height:1.7;' },
-          h('li', { text: '镜像源：改写镜像名。例如输入 ' }),
-          h('code', { text: 'alpine:3.20' }),
-          h('span', { text: ' 时实际执行 ' }),
-          h('code', { text: 'wslc image pull <mirror>/library/alpine:3.20' }),
-          h('li', { text: '代理：以 ' }),
-          h('code', { text: '-e HTTP_PROXY=…' }),
-          h('span', { text: ' 注入容器环境变量。注意容器内 ' }),
-          h('code', { text: '127.0.0.1' }),
-          h('span', { text: ' 指向容器自身，宿主机代理须用 ' }),
-          h('code', { text: 'host.wslc.internal' }),
-          h('span', { text: '，且代理需监听 0.0.0.0。' })
+      h('div', { class: 'card-body', style: 'padding-top:0;' },
+        h('p', { class: 'hint-text', style: 'margin:0 0 6px;' },
+          h('strong', { text: '镜像源改写' }),
+          h('span', { text: '：输入 ' }), h('code', { text: 'alpine:3.20' }),
+          h('span', { text: ' → 实际执行 ' }), h('code', { text: 'wslc image pull <mirror>/library/alpine:3.20' })
+        ),
+        h('p', { class: 'hint-text', style: 'margin:0;' },
+          h('strong', { text: '代理注入' }),
+          h('span', { text: '：仅对 ' }), h('code', { text: 'wslc run' }), h('span', { text: ' 以 ' }),
+          h('code', { text: '-e HTTP_PROXY=…' }), h('span', { text: ' 生效。容器内 ' }),
+          h('code', { text: '127.0.0.1' }), h('span', { text: ' 指向容器自身，宿主机代理须用 ' }),
+          h('code', { text: 'host.wslc.internal' }), h('span', { text: '（= 169.254.73.254）并监听 ' }),
+          h('code', { text: '0.0.0.0' })
         )
       )
     ));
@@ -2656,22 +2663,8 @@
       )
     ));
 
-    /* 设置文件位置 */
-    if (state.env && state.env.SettingsPath) {
-      nodes.push(h('div', { class: 'card' },
-        h('div', { class: 'card-head' },
-          h('span', { class: 'head-icon', 'aria-hidden': 'true', text: '📄' }),
-          h('span', { text: '设置文件' })
-        ),
-        h('div', { class: 'card-body' },
-          h('dl', { class: 'kv' },
-            kvRow('路径', state.env.SettingsPath),
-            kvRow('生效镜像', activeMirror || '（未启用）'),
-            kvRow('预设镜像数', presets.length)
-          )
-        )
-      ));
-    }
+    /* 设置文件路径挪到工具栏右下角的状态位（loadSettings 结束时写入 settings-status）；
+       这里不再单独占一张卡片。 */
 
     /* 错误 */
     if (state.error.settings) {
@@ -2699,9 +2692,10 @@
     setChildren(root, nodes);
     var el = $('settings-status');
     if (el) {
-      el.textContent = state.loaded.settings
-        ? ('已加载 ' + fmtTime(state.loadedAt.settings))
-        : (state.loading.settings ? '加载中…' : '—');
+      var path = state.env && state.env.SettingsPath ? state.env.SettingsPath : '';
+      var timeStr = state.loaded.settings ? fmtTime(state.loadedAt.settings) : '—';
+      el.textContent = path ? (path + '  ·  ' + timeStr) : timeStr;
+      el.title = path || '—';
     }
   }
 
