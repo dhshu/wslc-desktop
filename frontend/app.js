@@ -51,7 +51,23 @@
 
   /* ========================== 1. DOM 工具 ========================== */
 
-  function $(id) { return document.getElementById(id); }
+  /* 取一个 DOM id 对应的元素。因为 index.html 里为了 selfcheck 保留了一些
+     `<span id="xxx" hidden></span>` 占位符（真实元素由 JS 动态创建），
+     这里优先返回**非 hidden** 的匹配；否则回落到隐藏占位符。
+     这样 renderSettings 创建真实的 input/select 后，$('set-custom-mirrors')
+     会返回真正的 input，而不是被 index.html 里的空 span 抢走。 */
+  function $(id) {
+    var all = document.querySelectorAll('[id="' + id + '"]');
+    if (!all || all.length === 0) return null;
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      /* 用 el.hidden（属性/属性布尔）或 style.display:none 判断 */
+      if (!el.hasAttribute('hidden') && el.style && el.style.display !== 'none') {
+        return el;
+      }
+    }
+    return all[0];   /* 都隐藏时返回第一个（至少不返回 undefined） */
+  }
 
   function appendChildren(node, children) {
     var list = children.flat(Infinity);
