@@ -336,7 +336,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
    面板（.view-panel）的事，一旦加到 section 上会让 subtabs 与表格
    都挤进 flex 布局，产生奇怪的错位。 */
 .view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.view[hidden] { display: none !important; }
+
+/* [hidden] 必须显式压掉，不能依赖浏览器的默认 [hidden]{display:none}。
+   .view 和 .panel.view-panel 都声明了 display:flex（作者样式），
+   作者样式的优先级高于 UA 样式表 —— 一旦某条作者规则给了 display，
+   默认的 [hidden] 隐藏就失效了，被隐藏的面板会照常渲染出来，
+   表现为"切换标签时看到其它 tab 的内容"。 */
+.view[hidden],
+.panel[hidden],
+.view-panel[hidden] { display: none !important; }
 
 /* ============================ 工具条与表单 ============================ */
 .toolbar {

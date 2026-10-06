@@ -24,6 +24,7 @@ const read = (p) => readFileSync(p, 'utf8');
 
 const appJs = read(join(frontend, 'app.js'));
 const indexHtml = read(join(frontend, 'index.html'));
+const stylesCss = read(join(frontend, 'styles.css'));
 const appBindings = read(join(frontend, 'wailsjs', 'go', 'main', 'App.js'));
 const runtimeShim = read(join(frontend, 'wailsjs', 'runtime', 'runtime.js'));
 const contract = read(join(root, 'docs', 'CONTRACT.md'));
@@ -119,6 +120,35 @@ allPanels.forEach(([v, p]) => {
   }
 });
 notes.push(`视图（${views.length} 分组 / ${allPanels.length} 面板）：` + views.join(' / '));
+
+/* ------------------------------------------------- 4b. [hidden] 必须压得住 display */
+/* 这是"切换标签页时看到其它 tab 内容"的回归点：.view 与 .panel.view-panel
+   都声明了 display（作者样式），作者样式优先于 UA 的 [hidden]{display:none}，
+   于是被隐藏的面板照常渲染。styles.css 必须显式给出 [hidden] 规则。 */
+{
+  /* 必须先剥掉注释：注释里提到 [hidden] / .panel 会被误当成选择器，
+     让检查在规则被删掉之后仍然通过（假阴性）。 */
+  const cssCode = stylesCss.replace(/\/\*[\s\S]*?\*\//g, '');
+  const hiddenRules = [...cssCode.matchAll(/([^{}]*\[hidden\][^{}]*)\{([^}]*)\}/g)]
+    .map((m) => ({ sel: m[1].replace(/\s+/g, ' ').trim(), body: m[2] }));
+  const covers = (cls) => hiddenRules.some(
+    (r) => r.sel.includes(cls) && /display\s*:\s*none/.test(r.body) && /!important/.test(r.body)
+  );
+  if (!covers('.view')) {
+    fail('styles.css 缺少 .view[hidden]{display:none !important} —— 被隐藏的分组会照常渲染');
+  }
+  if (!covers('.panel')) {
+    fail('styles.css 缺少 .panel[hidden]{display:none !important} —— 被隐藏的子面板会照常渲染');
+  }
+  /* 声明了 display 的容器类，都必须有对应的 [hidden] 兜底 */
+  for (const cls of ['.view', '.panel']) {
+    const declRe = new RegExp(cls.replace('.', '\\.') + '\\s*\\{[^}]*display\\s*:', 'm');
+    if (declRe.test(stylesCss) && !covers(cls)) {
+      fail(`${cls} 声明了 display，却没有配套的 [hidden]{display:none !important}`);
+    }
+  }
+  notes.push(`[hidden] 兜底规则：${hiddenRules.length} 条`);
+}
 
 /* ---------------------------------------------------------------- 5. v3/v1 包 */
 /* 只在“可执行代码”里查，注释里提到包名属于文档说明，不算引用。 */
