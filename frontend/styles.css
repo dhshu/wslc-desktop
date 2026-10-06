@@ -414,6 +414,21 @@ input[type="search"].input { min-width: 190px; }
   background: var(--bg);
   border-bottom: none;
 }
+/* 面板顶部的一句话说明（例如"会话磁盘来自 storage.vhdx"）：
+   独立一行，不占 flex，不参与工具条换行 —— 之前直接放在 toolbar
+   里时，长文本把其它工具条元素挤到下一行，视觉上像"顶部空白"。 */
+.panel-hint {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+}
+.panel-hint code { color: var(--text); }
+.panel-hint strong { color: var(--text); font-weight: 600; }
 .panel > summary {
   cursor: pointer; padding: 6px 10px; font-size: var(--fs-sm);
   color: var(--text-dim); user-select: none;
