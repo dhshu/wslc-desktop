@@ -329,8 +329,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   display: flex; flex-direction: column; overflow: hidden;
   outline: none;
 }
+/* 一个 <section class="view"> 就是主区域里唯一的可视内容槽：
+   其余 section 一律靠 [hidden] 属性彻底不渲染（display:none），
+   所以切分组时不会堆叠出多个 section。
+   注意不要给 .view 设 flex-direction / overflow —— 那些是子面板
+   面板（.view-panel）的事，一旦加到 section 上会让 subtabs 与表格
+   都挤进 flex 布局，产生奇怪的错位。 */
 .view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.view[hidden] { display: none; }
+.view[hidden] { display: none !important; }
 
 /* ============================ 工具条与表单 ============================ */
 .toolbar {
@@ -397,10 +403,12 @@ input[type="search"].input { min-width: 190px; }
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
 }
-/* 子面板（分组内的 tab 内容）：占满可用空间并可滚动 */
+/* 子面板（分组内的 tab 内容）：占据分组内的剩余高度并可滚动。
+   不声明 display，继承 section 的 block 上下文 —— 否则 flex 布局
+   会让内联 <span> 变成匿名 flex item，导致"会话 3（合计 0 B）"
+   之类的状态文本被拆成两行。 */
 .panel.view-panel {
   flex: 1 1 auto;
-  display: flex; flex-direction: column;
   min-height: 0;
   overflow: auto;
   background: var(--bg);
