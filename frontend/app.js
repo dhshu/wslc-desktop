@@ -977,11 +977,14 @@
       if (sec) sec.hidden = !on;
     });
 
-    /* 分组内：先全部隐藏，再显示当前子面板。 */
+    /* 分组内：把面板 hidden 与分组可见性合并计算 ——
+       一个面板只有在「它的分组是当前选中的分组」且「它本身是
+       当前子面板」时才可见；否则一律隐藏。这样切走一个分组后，
+       该分组内所有面板都跟着隐藏，不会出现多个 section 同时可见。 */
     Object.keys(GROUPS).forEach(function (v) {
       GROUPS[v].forEach(function (panel) {
         var el = panelEl(panel);
-        if (el) el.hidden = (v === view && panel === active);
+        if (el) el.hidden = !(v === view && panel === active);
       });
     });
 
