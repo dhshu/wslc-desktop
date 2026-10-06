@@ -38,17 +38,47 @@
     'ListImages', 'PullImage', 'BuildImage', 'RemoveImage', 'TagImage',
     'InspectImage', 'ExportImage', 'ImportImage',
     'ListSessions', 'TerminateSession',
+    'ListSessionStorage', 'ResetSessionStorage', 'ShrinkSessionStorage',
     'ListVolumes', 'CreateVolume', 'RemoveVolume',
     'ListNetworks', 'CreateNetwork', 'RemoveNetwork',
     'PruneContainers', 'PruneImages', 'ListTasks', 'CancelTask', 'StreamEvents',
     'LoadSettings', 'SaveSettings', 'TestMirror'
   ];
 
-  var VIEWS = ['containers', 'images', 'sessions', 'volumes', 'networks', 'env', 'tasks', 'settings'];
+  var VIEWS = ['containers', 'images', 'sessions', 'resources', 'diagnostics', 'tasks'];
   var MAX_LINES = 5000;
   var STORE_LINES = 1500;
   var MAX_ERRORS = 25;
   var VIEW_STALE_MS = 20000;
+
+  /* 合并标签页后的二级视图。每个顶级视图（VIEWS）对应一个 view- 分组，
+     分组内可能包含多个面板：单面板分组直接复用同名面板，双面板分组用
+     sub-view 切换显隐。数据加载、渲染与缓存仍按面板键进行，因此把
+     sessions/storage 放进同一个标签页不会互相覆盖状态。 */
+  var GROUPS = {
+    containers: ['containers'],
+    images: ['images'],
+    sessions: ['sessions', 'storage'],
+    resources: ['volumes', 'networks'],
+    diagnostics: ['env', 'settings'],
+    tasks: ['tasks']
+  };
+  /* 面板键 -> 所属顶级视图 */
+  var PARENT = {};
+  Object.keys(GROUPS).forEach(function (view) {
+    GROUPS[view].forEach(function (panel) { PARENT[panel] = view; });
+  });
+  /* 顶级视图 -> 面板顺序；子视图选择状态（仅对多面板分组生效） */
+  var SUB = { sessions: 'sessions', resources: 'volumes', diagnostics: 'env' };
+  /* 面板键 -> 显示名（含已合并的面板） */
+  var PANEL_LABELS = {
+    containers: '容器', images: '镜像', sessions: '会话', storage: '存储',
+    volumes: '卷', networks: '网络', env: '环境自检', settings: '设置', tasks: '任务'
+  };
+  var VIEW_LABELS = {
+    containers: '容器', images: '镜像', sessions: '会话与存储',
+    resources: '资源', diagnostics: '诊断', tasks: '任务'
+  };
 
   /* ========================== 1. DOM 工具 ========================== */
 
@@ -252,6 +282,7 @@
     containers: [],
     images: [],
     sessions: [],
+    storage: [],
     volumes: [],
     networks: [],
     tasks: [],
@@ -903,89 +934,170 @@
     return state.loadedAt[name] ? (Date.now() - state.loadedAt[name]) : Infinity;
   }
 
-  /* 每个视图都能从当前缓存状态重绘：切回标签页时保证已加载的数据一定可见。 */
-  function renderView(name) {
+  /* 每个面板都能从当前缓存状态重绘：切回标签页时保证已加载的数据一定可见。 */
+  function renderPanel(panel) {
     var renderers = {
       containers: renderContainers,
       images: renderImages,
       sessions: renderSessions,
+      storage: renderStorage,
       volumes: renderVolumes,
       networks: renderNetworks,
       env: renderEnv,
-      tasks: renderTasks,
-      settings: renderSettings
+      settings: renderSettings,
+      tasks: renderTasks
     };
-    var fn = renderers[name];
+    var fn = renderers[panel];
     if (fn) fn();
   }
 
-  function selectView(name, opts) {
-    if (VIEWS.indexOf(name) < 0) name = 'containers';
-    state.view = name;
+  /* 面板键 -> 面板元素（单面板分组复用 view- 分组，双面板分组用 panel-）。 */
+  function panelEl(panel) {
+    if (panel === 'containers' || panel === 'images' || panel === 'tasks') {
+      return $('view-' + panel);
+    }
+    return $('panel-' + panel);
+  }
+
+  function selectView(view, opts) {
+    if (VIEWS.indexOf(view) < 0) view = 'containers';
+    state.view = view;
+    var panels = GROUPS[view];
+    /* 记住进入该分组时的子视图，切走再切回时能回到原处 */
+    if (!SUB[view]) SUB[view] = panels[0];
+    var active = SUB[view];
+    if (panels.indexOf(active) < 0) active = panels[0];
+    SUB[view] = active;
+
     VIEWS.forEach(function (v) {
       var tab = $('tab-' + v);
       var sec = $('view-' + v);
-      var on = v === name;
+      var on = v === view;
       if (tab) {
         tab.setAttribute('aria-selected', on ? 'true' : 'false');
         tab.tabIndex = on ? 0 : -1;
       }
       if (sec) sec.hidden = !on;
     });
+
+    /* 分组内：只让当前子面板可见 */
+    Object.keys(GROUPS).forEach(function (v) {
+      GROUPS[v].forEach(function (panel) {
+        var el = panelEl(panel);
+        if (el) el.hidden = (v === view && panel === active);
+      });
+    });
+
+    /* 子视图切换按钮的选中态 */
+    Object.keys(GROUPS).forEach(function (v) {
+      if (GROUPS[v].length < 2) return;
+      GROUPS[v].forEach(function (panel) {
+        var btn = $('subtab-' + v + '-' + panel);
+        if (btn) btn.setAttribute('aria-selected', v === view && panel === active ? 'true' : 'false');
+      });
+    });
+
     try {
-      if (location.hash !== '#/' + name) history.replaceState(null, '', '#/' + name);
+      var hash = '#/' + view;
+      if (SUB[view] && SUB[view] !== GROUPS[view][0]) hash += '/' + SUB[view];
+      if (location.hash !== hash) history.replaceState(null, '', hash);
     } catch (e) { /* file:// 下可能受限，忽略 */ }
-    if (!opts || opts.force !== false) ensureView(name);
+    if (!opts || opts.force !== false) loadPanel(active);
     /* 数据可能是后台（启动/轮询/事件）加载的，切页时必须重绘一次，
        否则会看到一张空表 —— 例如任务视图。 */
-    renderView(name);
+    renderPanel(active);
     updateStatusLine();
   }
 
-  function ensureView(name, force) {
+  /* 切换分组内的子视图（二级标签页）。 */
+  function selectSubView(view, panel) {
+    if (!GROUPS[view] || GROUPS[view].indexOf(panel) < 0) return;
+    if (state.view !== view) {
+      SUB[view] = panel;
+      selectView(view);
+      return;
+    }
+    SUB[view] = panel;
+    GROUPS[view].forEach(function (p) {
+      var el = panelEl(p);
+      if (el) el.hidden = (p !== panel);
+    });
+    GROUPS[view].forEach(function (p) {
+      var btn = $('subtab-' + view + '-' + p);
+      if (btn) btn.setAttribute('aria-selected', p === panel ? 'true' : 'false');
+    });
+    loadPanel(panel);
+    renderPanel(panel);
+    updateStatusLine();
+  }
+
+  function loadPanel(panel, force) {
     var loaders = {
       containers: loadContainers,
       images: loadImages,
       sessions: loadSessions,
+      storage: loadStorage,
       volumes: loadVolumes,
       networks: loadNetworks,
       env: loadEnv,
       tasks: loadTasks,
       settings: loadSettings
     };
-    var fn = loaders[name];
+    var fn = loaders[panel];
     if (!fn) return;
-    if (!force && state.loaded[name] && viewAge(name) < VIEW_STALE_MS) return;
+    if (force) return forcePanel(fn, panel);
+    if (!state.loaded[panel] && viewAge(panel) >= VIEW_STALE_MS) return fn();
+    if (state.loaded[panel]) return;
     return fn();
   }
 
+  /* 强制重取某面板数据（绕过 STALE 缓存判断）。 */
+  function forcePanel(fn, panel) {
+    if (!fn) return Promise.resolve();
+    var prev = state.loaded[panel];
+    state.loaded[panel] = false;
+    return Promise.resolve(fn()).finally(function () { state.loaded[panel] = prev; });
+  }
+
+  /* 刷新当前子面板（F5）。 */
   function refreshCurrentView() {
     var btn = $('btn-refresh');
     if (btn) btn.disabled = true;
-    var p = ensureView(state.view, true);
+    var panel = currentPanel();
+    var p = loadPanel(panel, true);
     Promise.resolve(p).then(
-      function () { toast('info', '已刷新：' + viewLabel(state.view)); },
-      function () { /* 错误已由视图内呈现 */ }
+      function () { toast('info', '已刷新：' + PANEL_LABELS[panel]); },
+      function () { /* 错误已由面板内呈现 */ }
     ).then(function () { if (btn) btn.disabled = false; });
   }
 
   function viewLabel(name) {
-    return ({ containers: '容器', images: '镜像', sessions: '会话', volumes: '卷', networks: '网络', env: '环境自检', tasks: '任务' })[name] || name;
+    return VIEW_LABELS[name] || PANEL_LABELS[name] || name;
+  }
+
+  /* 当前正在显示的面板键：单面板分组就是分组名本身。 */
+  function currentPanel() {
+    return SUB[state.view] || (GROUPS[state.view] || [])[0] || state.view;
   }
 
   function updateStatusLine() {
+    var panel = currentPanel();
     var parts = [];
-    if (state.view === 'containers') {
+    if (panel === 'containers') {
       var running = state.containers.filter(function (c) { return containerState(c) === 'running'; }).length;
       parts.push('容器 ' + state.containers.length + '（运行 ' + running + ' / 退出 ' + (state.containers.length - running) + '）');
-    } else if (state.view === 'images') parts.push('镜像 ' + state.images.length);
-    else if (state.view === 'sessions') parts.push('会话 ' + state.sessions.length);
-    else if (state.view === 'volumes') parts.push('卷 ' + state.volumes.length);
-    else if (state.view === 'networks') parts.push('网络 ' + state.networks.length);
-    else if (state.view === 'tasks') {
+    } else if (panel === 'images') parts.push('镜像 ' + state.images.length);
+    else if (panel === 'sessions') parts.push('会话 ' + state.sessions.length);
+    else if (panel === 'storage') {
+      var total = state.storage.reduce(function (n, s) { return n + (Number(s.BytesOnDisk) || 0); }, 0);
+      parts.push('会话存储 ' + state.storage.length + '（合计 ' + formatBytesJS(total) + '）');
+    }
+    else if (panel === 'volumes') parts.push('卷 ' + state.volumes.length);
+    else if (panel === 'networks') parts.push('网络 ' + state.networks.length);
+    else if (panel === 'tasks') {
       var act = state.tasks.filter(function (t) { return String(t.State).toLowerCase() === 'running'; }).length;
       parts.push('任务 ' + state.tasks.length + '（进行中 ' + act + '）');
-    } else if (state.view === 'env') {
+    } else if (panel === 'env') {
       parts.push('环境自检：' + (state.env ? (state.env.ServiceReady ? '就绪' : '不可用') : '未检测'));
     }
     if (state.logs) parts.push('日志流 ' + shortId(state.logs.streamID, 8));
@@ -1538,7 +1650,7 @@
         setTabCount('images', state.images.length);
         refreshRunImageOptions(imageSelect);
         /* 如果此时用户又切到了「镜像」页，那里也会重绘 */
-        if (state.view === 'images') renderImages();
+        if (currentPanel() === 'images') renderImages();
       }).catch(function () { /* 忽略；下拉里已有占位提示 */ })
         .then(function () { state.loading.images = false; refreshRunImageOptions(imageSelect); });
     }
@@ -2065,6 +2177,150 @@
     await loadSessions();
   }
 
+  /* ========================== 12b. 会话存储视图 ========================== */
+
+  /* %LOCALAPPDATA%\wslc 为什么那么大：每个 wslc 会话的根文件系统都是一个
+     storage.vhdx 动态磁盘，镜像层、构建缓存、卷数据全都落在里面。
+     `wslc system session terminate` 只停 VM，不会删除或截断这个文件，
+     所以磁盘会一直留着。本视图是唯一能看到它、能压缩它、能删它的地方。 */
+
+  function formatBytesJS(n) {
+    n = Number(n) || 0;
+    if (n <= 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    var i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    if (i === 0) return Math.round(n) + ' B';
+    return (Math.round(n * 10) / 10) + ' ' + units[i];
+  }
+
+  async function loadStorage() {
+    var key = 'storage';
+    state.loading[key] = true;
+    state.error[key] = null;
+    renderStorage();
+    try {
+      var list = await invoke('ListSessionStorage');
+      state.storage = Array.isArray(list) ? list : [];
+      state.loaded[key] = true;
+      state.loadedAt[key] = Date.now();
+      touchLast();
+    } catch (e) {
+      state.error[key] = normalizeError(e);
+      if (!state.loaded[key]) state.storage = [];
+      fail('ListSessionStorage', e, { showDetail: false });
+    } finally {
+      state.loading[key] = false;
+      renderStorage();
+      updateStatusLine();
+    }
+  }
+
+  function renderStorage() {
+    var tbody = $('stor-body');
+    if (!tbody) return;
+    var cols = 5;
+    if (renderLoadedState(tbody, 'storage', cols, function () { loadStorage(); })) {
+      setCount('stor-count', 0, '个');
+      return;
+    }
+    var items = state.storage;
+    setCount('stor-count', items.length, '个');
+    var total = items.reduce(function (n, s) { return n + (Number(s.BytesOnDisk) || 0); }, 0);
+    var totalEl = $('stor-total');
+    if (totalEl) totalEl.textContent = items.length ? formatBytesJS(total) : '—';
+
+    if (!items.length) {
+      setChildren(tbody, [stateRow(cols, 'empty', {
+        title: '没有会话存储',
+        message: '尚未创建过任何 wslc 会话。首次调用任意 wslc 命令时会自动创建默认会话，其磁盘文件为 storage.vhdx。',
+        retry: function () { loadStorage(); }
+      })]);
+      return;
+    }
+
+    var frag = document.createDocumentFragment();
+    items.forEach(function (st) {
+      var name = String(st.SessionName || '').trim() || '（无名称）';
+      var exists = !!st.Exists;
+      var active = !!st.Active;
+      var size = exists ? formatBytesJS(st.BytesOnDisk) : '—';
+      var title = st.Path ? st.Path : '';
+      var disabled = !exists || active;
+      frag.appendChild(h('tr', {
+        tabindex: '0',
+        dataset: { name: name, active: active ? '1' : '0', exists: exists ? '1' : '0' }
+      },
+        h('td', { class: 'col-name', text: name, title: title }),
+        h('td', { class: 'mono', text: size, title: exists ? String(st.BytesOnDisk || 0) + ' bytes' : '' }),
+        h('td', { text: exists ? '存在' : '已删除' }),
+        h('td', {
+          class: active ? 'badge badge-warn' : 'badge',
+          text: active ? '运行中' : '已停止',
+          title: active ? '会话 VM 正在运行：磁盘被占用，压缩与删除会失败' : '会话 VM 已停止：可以压缩或删除磁盘'
+        }),
+        h('td', { class: 'col-actions' },
+          h('div', { class: 'cell-actions' },
+            h('button', {
+              class: 'btn btn-row', type: 'button',
+              title: '调用 diskpart 压缩 storage.vhdx，把未使用的空间还给磁盘（不丢数据）',
+              'aria-label': '压缩 ' + name + ' 的存储',
+              disabled: disabled,
+              text: '压缩',
+              onclick: function () { shrinkStorageDialog(name, st); }
+            }),
+            h('button', {
+              class: 'btn btn-row is-danger', type: 'button',
+              title: '删除 storage.vhdx，彻底释放磁盘（镜像、容器、卷数据全部丢失）',
+              'aria-label': '删除 ' + name + ' 的存储',
+              disabled: disabled,
+              text: '删除',
+              onclick: function () { resetStorageDialog(name, st); }
+            })
+          )
+        )
+      ));
+    });
+    setChildren(tbody, [frag]);
+  }
+
+  async function shrinkStorageDialog(name, st) {
+    var msg = st.Active
+      ? '会话「' + name + '」正在运行，请先在会话视图终止它再压缩。'
+      : '将调用 Windows 的 diskpart 压缩会话「' + name + '」的 storage.vhdx（' + (st.SizeText || formatBytesJS(st.BytesOnDisk)) + '）。\n\n压缩会保留全部镜像、容器与卷数据，只把未使用的空间还给磁盘。diskpart 需要管理员权限；若以普通用户启动本程序，请改用「删除」释放空间，或以管理员身份重新打开本程序。';
+    var r = await confirmDialog({
+      title: '压缩会话存储',
+      message: msg,
+      detail: 'ShrinkSessionStorage(name=' + name + ')',
+      confirmLabel: '压缩',
+      danger: false
+    });
+    if (!r.confirmed) return;
+    try {
+      var out = await invoke('ShrinkSessionStorage', name);
+      toast('success', '已压缩会话存储：' + name, String(out || '').trim().slice(0, 300));
+    } catch (e) { fail('ShrinkSessionStorage', e); }
+    await loadStorage();
+  }
+
+  async function resetStorageDialog(name, st) {
+    var size = st.SizeText || formatBytesJS(st.BytesOnDisk);
+    var r = await confirmDialog({
+      title: '删除会话存储',
+      message: '将删除会话「' + name + '」的 storage.vhdx（' + size + '）。\n\n其中的镜像、容器、构建缓存与卷数据会全部丢失，且不可恢复。wslc 会在下次使用时以同一会话名重新创建一个空磁盘。',
+      detail: 'ResetSessionStorage(name=' + name + ') · ' + (st.Path || ''),
+      confirmLabel: '删除',
+      danger: true,
+      requireText: 'DELETE'
+    });
+    if (!r.confirmed) return;
+    try {
+      var out = await invoke('ResetSessionStorage', name);
+      toast('success', '已删除会话存储：' + name, String(out || '').trim().slice(0, 300));
+    } catch (e) { fail('ResetSessionStorage', e); }
+    await loadStorage();
+  }
+
   /* ========================== 13. 卷视图 ========================== */
 
   async function loadVolumes() {
@@ -2453,7 +2709,7 @@
     var key = 'settings';
     state.loading[key] = true;
     state.error[key] = null;
-    if (state.view === 'settings') renderSettings();
+    if (currentPanel() === 'settings') renderSettings();
     try {
       var data = await invoke('LoadSettings');
       state.settings = data || null;
@@ -2467,10 +2723,10 @@
     } catch (e) {
       state.error[key] = normalizeError(e);
       if (!state.loaded[key]) state.settings = null;
-      if (state.view === 'settings') fail('LoadSettings', e, { showDetail: false });
+      if (currentPanel() === 'settings') fail('LoadSettings', e, { showDetail: false });
     } finally {
       state.loading[key] = false;
-      if (state.view === 'settings') renderSettings();
+      if (currentPanel() === 'settings') renderSettings();
       updateStatusLine();
     }
   }
@@ -2498,7 +2754,7 @@
       fail('SaveSettings', e, { showDetail: true });
     } finally {
       state.loading[key] = false;
-      if (state.view === 'settings') renderSettings();
+      if (currentPanel() === 'settings') renderSettings();
       updateStatusLine();
     }
   }
@@ -2545,14 +2801,14 @@
   async function testMirror(endpoint) {
     if (!endpoint) return;
     state.settingsProbe[endpoint] = { busy: true };
-    if (state.view === 'settings') renderSettings();
+    if (currentPanel() === 'settings') renderSettings();
     try {
       var probe = await invoke('TestMirror', endpoint);
       state.settingsProbe[endpoint] = probe || { OK: false, Message: '无结果' };
     } catch (e) {
       state.settingsProbe[endpoint] = { OK: false, Message: normalizeError(e).message || String(e) };
     }
-    if (state.view === 'settings') renderSettings();
+    if (currentPanel() === 'settings') renderSettings();
   }
 
   /* 状态胶囊（Currently Active / Normal / Off） */
@@ -2629,7 +2885,7 @@
   /* 常用镜像预设编辑：增 / 删 / 上移 */
   function addPresetRow() {
     state._pendingPreset = { Label: '', Ref: '' };
-    if (state.view === 'settings') renderSettings();
+    if (currentPanel() === 'settings') renderSettings();
   }
   function removePresetRow(idx) {
     if (!state.settings || !state.settings.PresetImages) return;
@@ -2945,7 +3201,7 @@
     var key = 'tasks';
     state.loading[key] = true;
     state.error[key] = null;
-    if (state.view === 'tasks') renderTasks();
+    if (currentPanel() === 'tasks') renderTasks();
     try {
       var list = await invoke('ListTasks');
       state.tasks = Array.isArray(list) ? list : [];
@@ -2956,10 +3212,10 @@
     } catch (e) {
       state.error[key] = normalizeError(e);
       if (!state.loaded[key]) state.tasks = [];
-      if (state.view === 'tasks') fail('ListTasks', e, { showDetail: false });
+      if (currentPanel() === 'tasks') fail('ListTasks', e, { showDetail: false });
     } finally {
       state.loading[key] = false;
-      if (state.view === 'tasks') renderTasks();
+      if (currentPanel() === 'tasks') renderTasks();
       updateStatusLine();
     }
   }
@@ -3313,14 +3569,14 @@
       runtime.EventsOn(ENV_EVENT, function (env) {
         if (env && typeof env === 'object') {
           applyEnv(env);
-          if (state.view === 'env') renderEnv();
+          if (currentPanel() === 'env') renderEnv();
           state.loaded.env = true;
           state.loadedAt.env = Date.now();
           if (Array.isArray(env.Sessions) && env.Sessions.length) {
             state.sessions = env.Sessions;
             state.loaded.sessions = true;
             state.loadedAt.sessions = Date.now();
-            if (state.view === 'sessions') renderSessions();
+            if (currentPanel() === 'sessions') renderSessions();
           }
         }
       });
@@ -3370,6 +3626,29 @@
         selectView(VIEWS[next]);
         var t = $('tab-' + VIEWS[next]);
         if (t) t.focus();
+      });
+    });
+
+    /* 分组内的二级标签页 */
+    Object.keys(GROUPS).forEach(function (view) {
+      if (GROUPS[view].length < 2) return;
+      GROUPS[view].forEach(function (panel) {
+        var btn = $('subtab-' + view + '-' + panel);
+        if (!btn) return;
+        btn.addEventListener('click', function () { selectSubView(view, panel); });
+        btn.addEventListener('keydown', function (ev) {
+          var idx = GROUPS[view].indexOf(panel);
+          var next = -1;
+          if (ev.key === 'ArrowRight') next = (idx + 1) % GROUPS[view].length;
+          else if (ev.key === 'ArrowLeft') next = (idx - 1 + GROUPS[view].length) % GROUPS[view].length;
+          else if (ev.key === 'Home') next = 0;
+          else if (ev.key === 'End') next = GROUPS[view].length - 1;
+          if (next < 0) return;
+          ev.preventDefault();
+          selectSubView(view, GROUPS[view][next]);
+          var t = $('subtab-' + view + '-' + GROUPS[view][next]);
+          if (t) t.focus();
+        });
       });
     });
 
@@ -3563,6 +3842,10 @@
         if (hit) showTextModal('会话详情 · ' + (hit.Name || sid), JSON.stringify(hit, null, 2));
       });
     }
+
+    /* 会话存储 */
+    var storReload = $('btn-stor-reload');
+    if (storReload) storReload.addEventListener('click', loadStorage);
 
     /* 卷 */
     var volForm = $('vol-form');
@@ -3796,14 +4079,20 @@
 
   /* ========================== 20. 启动 ========================== */
 
+  /* 解析 #/view 或 #/view/panel 形式的地址栏。 */
   function initFromHash() {
-    var name = null;
+    var view = 'containers';
+    var panel = null;
     try {
       var hash = String(location.hash || '');
-      var m = hash.match(/^#\/([a-z]+)$/);
-      if (m) name = m[1];
-    } catch (e) { name = null; }
-    return VIEWS.indexOf(name) >= 0 ? name : 'containers';
+      var m = hash.match(/^#\/([a-z]+)(?:\/([a-z]+))?$/);
+      if (m) {
+        view = VIEWS.indexOf(m[1]) >= 0 ? m[1] : 'containers';
+        if (m[2] && GROUPS[m[1]] && GROUPS[m[1]].indexOf(m[2]) >= 0) panel = m[2];
+      }
+    } catch (e) { view = 'containers'; }
+    if (panel) SUB[view] = panel;
+    return view;
   }
 
   async function boot() {
@@ -3850,9 +4139,10 @@
       loadTasks();
     }, 2000);
 
-    /* 容器/镜像等视图超过 30s 未更新时，切回时自动刷新由 ensureView 的 STALE 逻辑处理。 */
+    /* 面板超过 60s 未更新时，窗口重新聚焦后自动刷新当前面板。 */
     window.addEventListener('focus', function () {
-      if (state.loaded[state.view] && viewAge(state.view) > VIEW_STALE_MS * 3) ensureView(state.view, true);
+      var panel = currentPanel();
+      if (state.loaded[panel] && viewAge(panel) > VIEW_STALE_MS * 3) loadPanel(panel);
     });
   }
 

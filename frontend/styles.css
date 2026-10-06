@@ -297,6 +297,32 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .tab[aria-selected="true"] .tab-icon { opacity: 1; }
 
+/* 合并标签页后的二级标签页：比主标签更低调，作为面板切换用。 */
+.subtabs {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 2px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.subtab {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text-dim); font-size: var(--fs-md);
+  cursor: pointer; white-space: nowrap;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.subtab:hover { color: var(--text); background: var(--bg-hover); }
+.subtab[aria-selected="true"] {
+  color: var(--accent);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.subtab[aria-selected="true"]:hover { background: transparent; }
+
 /* ============================ 主区域 ============================ */
 #main {
   flex: 1 1 auto; min-height: 0;

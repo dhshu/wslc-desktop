@@ -373,9 +373,21 @@ function makeEnv(opts) {
     }, extra || {});
     for (const fn of (docListeners[type] || []).slice()) fn(ev);
   }
-  function clickTab(view) { fire(byId.get('tab-' + view), 'click'); }
+  /* 合并标签页后：顶级视图是分组名，面板通过 subtab-<group>-<panel> 切换。
+     这里保持 clickTab('volumes') 等旧调用方式，同时补一个 clickSubTab。 */
+  const TAB_ALIAS = {
+    containers: ['containers'], images: ['images'],
+    sessions: ['sessions', 'sessions'], storage: ['sessions', 'storage'],
+    volumes: ['resources', 'volumes'], networks: ['resources', 'networks'],
+    env: ['diagnostics', 'env'], settings: ['diagnostics', 'settings'], tasks: ['tasks']
+  };
+  function clickTab(target) {
+    const pair = TAB_ALIAS[target] || [target];
+    fire(byId.get('tab-' + pair[0]), 'click');
+    if (pair.length > 1) fire(byId.get('subtab-' + pair[0] + '-' + pair[1]), 'click');
+  }
 
-  return { win, doc, byId, allElements, context, textOf, findAll, byText, buttonsWithAct, fire, fireDoc, clickTab, getEl: (id) => doc.getElementById(id) };
+  return { win, doc, byId, allElements, context, textOf, findAll, byText, buttonsWithAct, fire, fireDoc, clickTab, getEl: (id) => doc.getElementById(id), TAB_ALIAS };
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -423,7 +435,7 @@ let totalFailures = 0;
   const diag = env.win.__wslc && env.win.__wslc.diag ? env.win.__wslc.diag() : null;
   rep.check('window.__wslc.diag() 可用', !!diag);
   rep.check('后端模式 = unavailable', diag && diag.mode === 'unavailable', diag && diag.mode);
-  rep.check('期望方法数 = 39', diag && diag.expected && diag.expected.length === 39, diag && diag.expected && diag.expected.length);
+  rep.check('期望方法数 = 42', diag && diag.expected && diag.expected.length === 42, diag && diag.expected && diag.expected.length);
 
   const bannerText = env.textOf(env.byId.get('banner-root'));
   rep.check('显示「后端未就绪」横幅（不白屏）', /后端未就绪/.test(bannerText));
@@ -431,15 +443,17 @@ let totalFailures = 0;
   rep.check('后端 pill 标记为未就绪', /未就绪/.test(env.byId.get('backend-pill').textContent));
   rep.check('容器视图渲染错误态而非空白', /加载失败/.test(env.textOf(env.byId.get('ct-body'))));
 
-  for (const view of ['images', 'sessions', 'volumes', 'networks', 'env', 'tasks']) {
-    const tab = env.byId.get('tab-' + view);
+  for (const view of ['images', 'sessions', 'storage', 'volumes', 'networks', 'env', 'settings', 'tasks']) {
     env.clickTab(view);
     await sleep(20);
+    /* 合并标签页后，顶级 tab 与面板一一对应关系由分组决定 */
+    const pair = env.TAB_ALIAS[view] || [view];
+    const tab = env.byId.get('tab-' + pair[0]);
     const selected = env.allElements.filter((e) => e._classes.includes('tab') && e.getAttribute('aria-selected') === 'true');
-    rep.check(`点击 ${view} 后仅一个 tab 选中`, selected.length === 1 && selected[0] === tab);
-    const id = { images: 'img-body', sessions: 'sess-body', volumes: 'vol-body', networks: 'net-body', tasks: 'task-body', env: 'env-content' }[view];
-    const expect = view === 'env' ? /环境自检失败/ : /加载失败/;
-    rep.check(`${view} 视图渲染错误态而非空白`, expect.test(env.textOf(env.byId.get(id))));
+    rep.check(`点击 ${view} 后仅一个顶级 tab 选中`, selected.length === 1 && selected[0] === tab);
+    const id = { images: 'img-body', sessions: 'sess-body', volumes: 'vol-body', networks: 'net-body', tasks: 'task-body', env: 'env-content', storage: 'stor-body', settings: 'settings-content' }[view];
+    const expect = view === 'env' ? /环境自检失败/ : /加载失败|加载设置失败/;
+    rep.check(`${view} 视图渲染错误态而非空白`, expect.test(env.textOf(env.byId.get(id))), env.textOf(env.byId.get(id)).slice(0, 120));
   }
   rep.check('错误进入 toast（不静默吞掉）', env.byId.get('toast-root').childNodes.length > 0);
   rep.check('状态栏错误计数已显示', env.byId.get('status-err').hidden === false);
@@ -469,6 +483,11 @@ let totalFailures = 0;
   ];
   const volumes = [{ Name: 'data-vol', Driver: 'local', Scope: 'local', Mountpoint: '/var/lib/wslc/volumes/data-vol', CreatedAt: '2025-01-02 09:00:00' }];
   const networks = [{ ID: 'net1234567890ab', Name: 'bridge', Driver: 'bridge', Scope: 'local', CreatedAt: '2025-01-01 08:00:00', Containers: [] }];
+  const sessionStorage = [
+    { SessionName: 'wslc-cli-dhshu', Path: 'C:\\Users\\dhshu\\AppData\\Local\\wslc\\sessions\\wslc-cli-dhshu\\storage.vhdx', BytesOnDisk: 12098469888, SizeText: '11.3 GB', Exists: true, Active: false },
+    { SessionName: 'wslc-cli-running', Path: 'C:\\Users\\dhshu\\AppData\\Local\\wslc\\sessions\\wslc-cli-running\\storage.vhdx', BytesOnDisk: 571 * 1024 * 1024, SizeText: '571.0 MB', Exists: true, Active: true },
+    { SessionName: 'empty-session', Path: 'C:\\Users\\dhshu\\AppData\\Local\\wslc\\sessions\\empty-session\\storage.vhdx', BytesOnDisk: 0, SizeText: '0 B', Exists: false, Active: false }
+  ];
   const tasks = [
     { ID: 'task-run-1', Kind: 'image-pull', Ref: 'redis:7', State: 'running', StartedAt: '2025-01-02T10:00:00Z' },
     { ID: 'task-done-1', Kind: 'image-build', Ref: 'D:\\src\\app', State: 'succeeded', StartedAt: '2025-01-02T09:00:00Z', EndedAt: '2025-01-02T09:01:00Z' }
@@ -491,6 +510,8 @@ let totalFailures = 0;
     ListContainers: () => containers,
     ListImages: () => images,
     ListVolumes: () => volumes,
+    ListSessionStorage: () => sessionStorage,
+    ListSessionStorage: () => sessionStorage,
     ListNetworks: () => networks,
     ListTasks: () => tasks,
     ContainerStats: () => [],
@@ -519,6 +540,7 @@ let totalFailures = 0;
     'StartLogs', 'StopStream', 'StartTerminal', 'TerminalWrite', 'TerminalResize',
     'ListImages', 'PullImage', 'BuildImage', 'RemoveImage', 'TagImage', 'InspectImage',
     'ListVolumes', 'CreateVolume', 'RemoveVolume', 'ListNetworks', 'CreateNetwork',
+    'ListSessionStorage', 'ResetSessionStorage', 'ShrinkSessionStorage',
     'RemoveNetwork', 'PruneContainers', 'PruneImages', 'ListTasks', 'CancelTask', 'StreamEvents',
     'LoadSettings', 'SaveSettings', 'TestMirror'
   ];
@@ -820,6 +842,37 @@ let totalFailures = 0;
   env.fire(env.byText(env.byId.get('modal-root'), 'button', '取消'), 'click');
   await sleep(10);
   rep.check('取消后不调用 RemoveVolume', called('RemoveVolume').length === 0);
+
+  /* ---- 会话存储视图 ---- */
+  env.clickTab('storage');
+  await sleep(30);
+  const storText = env.textOf(env.byId.get('stor-body'));
+  rep.check('存储行渲染会话名/占用/状态',
+    /wslc-cli-dhshu/.test(storText) && /11\.3 GB/.test(storText) && /已停止/.test(storText) && /运行中/.test(storText));
+  rep.check('合计显示总占用', /11\.[89] GB/.test(env.textOf(env.byId.get('stor-total'))), env.textOf(env.byId.get('stor-total')));
+  rep.check('运行中的会话禁用压缩与删除', (() => {
+    const rows = env.findAll(env.byId.get('stor-body'), (e) => e.tagName === 'TR');
+    const running = rows.find((r) => r.dataset && r.dataset.active === '1');
+    if (!running) return false;
+    const btns = env.findAll(running, (e) => e.tagName === 'BUTTON');
+    const disabledAll = btns.length === 2 && btns.every((b) => b.disabled === true || b.attributes.disabled !== undefined);
+    // 运行中的会话不应出现在"压缩"确认回调里：点第一个可用按钮验证不会发起调用。
+    return disabledAll;
+  })(), '运行中会话的两个按钮应全部 disabled');
+  // 压缩走 diskpart，二次确认但不需要输入口令。
+  env.fire(env.byText(env.byId.get('stor-body'), 'button', '压缩'), 'click');
+  await sleep(20);
+  rep.check('压缩需二次确认', env.byId.get('modal-root').hidden === false && called('ShrinkSessionStorage').length === 0);
+  env.fire(env.byText(env.byId.get('modal-root'), 'button', '压缩'), 'click');
+  await sleep(40);
+  rep.check('确认后调用 ShrinkSessionStorage(name)', called('ShrinkSessionStorage').length === 1 && lastArgs('ShrinkSessionStorage')[0] === 'wslc-cli-dhshu');
+  // 删除是破坏性操作，必须要求输入 DELETE。
+  env.fire(env.byText(env.byId.get('stor-body'), 'button', '删除'), 'click');
+  await sleep(20);
+  rep.check('删除存储需二次确认（并要求输入 DELETE）', env.byId.get('modal-root').hidden === false && called('ResetSessionStorage').length === 0);
+  env.fire(env.byText(env.byId.get('modal-root'), 'button', '取消'), 'click');
+  await sleep(10);
+  rep.check('取消后不调用 ResetSessionStorage', called('ResetSessionStorage').length === 0);
 
   /* ---- 网络视图 ---- */
   env.clickTab('networks');

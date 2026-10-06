@@ -301,3 +301,61 @@ func TestIntegrationVolumeRoundTrip(t *testing.T) {
 		t.Fatalf("RemoveVolume: %v", err)
 	}
 }
+
+// TestIntegrationSessionStorageReadsRealSessions drives ListSessionStorage
+// against the machine's real %LOCALAPPDATA%\wslc directory. The whole point of
+// the view is to see storage that wslc itself never reports, so the assertion
+// here is that the filesystem enumeration agrees with wslc's own session list
+// for the sessions that are currently running.
+func TestIntegrationSessionStorageReadsRealSessions(t *testing.T) {
+	svc := integrationService(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	got, err := svc.ListSessionStorage(ctx)
+	if err != nil {
+		t.Fatalf("ListSessionStorage: %v", err)
+	}
+	t.Logf("会话存储：%+v", got)
+
+	// Every reported session must have a well-formed path and a size that is
+	// not negative. Nothing stronger is safe to assert: the machine may have
+	// any number of historical sessions and deleting them would be destructive.
+	for _, entry := range got {
+		if entry.SessionName == "" {
+			t.Errorf("会话名不应为空：%+v", entry)
+		}
+		if !filepath.IsAbs(entry.Path) {
+			t.Errorf("存储路径应为绝对路径：%+v", entry)
+		}
+		if entry.BytesOnDisk < 0 {
+			t.Errorf("磁盘占用不应为负：%+v", entry)
+		}
+		if entry.Exists && entry.BytesOnDisk == 0 {
+			t.Errorf("存在的存储文件不应报告 0 字节：%+v", entry)
+		}
+	}
+
+	// Every running session must have a matching entry, which is the join key
+	// the service uses for the Active flag.
+	sessions, err := svc.ListSessions(ctx)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	for _, sess := range sessions {
+		name := sess.Name
+		if name == "" {
+			continue
+		}
+		found := false
+		for _, entry := range got {
+			if entry.SessionName == name {
+				found = entry.Active
+				break
+			}
+		}
+		if !found {
+			t.Errorf("运行中的会话 %s 未在存储列表中或未被标记为运行中：%+v", name, got)
+		}
+	}
+}

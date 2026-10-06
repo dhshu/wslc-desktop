@@ -196,6 +196,12 @@ type BuildOptions struct {
 
 type PruneResult struct { Stdout string }
 
+// SessionStorage 描述一个 wslc 会话的磁盘占用。wslc 不暴露此信息：
+// sessions 目录布局是内部实现，`system session list` 只列运行中的会话，
+// 而恰恰是已终止会话的 storage.vhdx 让 %LOCALAPPDATA%\wslc 膨胀。
+type SessionStorage = domain.SessionStorage  // 由 domain 包定义
+
+
 // Wails 事件负载（前端 EventsOn 的结构）
 type OutputEvent struct {
     Channel string // "container-logs" | "terminal" | "build" | "pull" | "events" | "task"
@@ -255,6 +261,17 @@ func (s *Service) ImportImage(ctx context.Context, srcPath string) (string, erro
 // 会话
 func (s *Service) ListSessions(ctx context.Context) ([]domain.Session, error)
 func (s *Service) TerminateSession(ctx context.Context, sessionID int) (string, error)
+
+// 会话磁盘存储（见 internal/service/storage.go）
+//
+// 三个方法共同解决 "%LOCALAPPDATA%\wslc 为什么这么大"：每个会话的根文件系统
+// 是一个 storage.vhdx 动态磁盘，镜像层/构建缓存/卷数据都在里面，而
+// `system session terminate` 只停 VM、既不删除也不截断该文件。wslc 3.0.1 不
+// 提供任何查询或清理它的命令（`system prune` 不存在），sessions 目录布局也是
+// 内部实现，因此只能直接读文件系统。
+func (s *Service) ListSessionStorage(ctx context.Context) ([]domain.SessionStorage, error)
+func (s *Service) ResetSessionStorage(ctx context.Context, sessionName string) (string, error)
+func (s *Service) ShrinkSessionStorage(ctx context.Context, sessionName string) (string, error)
 
 // 卷与网络
 func (s *Service) ListVolumes(ctx context.Context) ([]domain.Volume, error)
@@ -325,5 +342,8 @@ func NewService(r wslc.Runner, e Emitter) *Service
 - 订阅输出：`window.runtime.EventsOn("wslc:output", cb)`。
 - 若绑定期望的文件尚未生成，**必须提供 `frontend/wailsjs/go/main/App.js` 的兜底实现**，
   使页面在浏览器里也能加载并给出明确提示；不得因为缺失绑定而白屏。
-- 视图：容器 / 镜像 / 卷 / 网络 / 环境自检 / 任务 六个标签页 + 日志与终端抽屉。
+- 视图：六个顶级标签页 —— 容器 / 镜像 / 会话与存储 / 资源 / 诊断 / 任务 ——
+  其中「会话与存储」= 会话 + 会话存储，「资源」= 卷 + 网络，「诊断」= 环境自检 + 设置，
+  每组内部用二级标签页切换。面板集合（九个）与后端方法的加载/渲染一一对应，
+  分组只是 UI 收纳，不影响数据缓存与刷新逻辑。
 - 所有破坏性操作（删除、prune、kill）必须二次确认。

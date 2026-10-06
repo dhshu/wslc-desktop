@@ -76,6 +76,21 @@ type Emitter interface {
 	Emit(event OutputEvent)
 }
 
+// ToolRunner is the optional capability of a Runner that can execute a
+// non-wslc Windows executable with arguments passed as a vector and stdin fed
+// from a string. It exists only for storage maintenance: shrinking a session
+// VHDX requires `diskpart`, which is not a wslc command and therefore cannot
+// travel through the Spec/Runner interface without pretending to be one.
+//
+// Keeping this as a separate, optional interface means the frozen Runner
+// contract stays untouched, and every test fake that implements only Runner
+// keeps compiling unchanged.
+type ToolRunner interface {
+	// RunTool runs exe with args (never a shell string) and stdin, capturing
+	// stdout/stderr. dir is the working directory; empty inherits.
+	RunTool(ctx context.Context, exe string, args []string, stdin, dir string) (wslc.Result, error)
+}
+
 // EmitterFunc adapts a plain function to Emitter.
 type EmitterFunc func(OutputEvent)
 

@@ -134,6 +134,28 @@ export namespace domain {
 	        this.CreatorPid = source["CreatorPid"];
 	    }
 	}
+	export class SessionStorage {
+	    SessionName: string;
+	    Path: string;
+	    BytesOnDisk: number;
+	    SizeText: string;
+	    Exists: boolean;
+	    Active: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionStorage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.SessionName = source["SessionName"];
+	        this.Path = source["Path"];
+	        this.BytesOnDisk = source["BytesOnDisk"];
+	        this.SizeText = source["SizeText"];
+	        this.Exists = source["Exists"];
+	        this.Active = source["Active"];
+	    }
+	}
 	export class Volume {
 	    Name: string;
 	    Driver: string;

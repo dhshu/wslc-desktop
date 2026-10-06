@@ -62,6 +62,10 @@ export function ListSessions() {
   return window['go']['main']['App']['ListSessions']();
 }
 
+export function ListSessionStorage() {
+  return window['go']['main']['App']['ListSessionStorage']();
+}
+
 export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
 }
@@ -102,6 +106,10 @@ export function RemoveVolume(arg1, arg2) {
   return window['go']['main']['App']['RemoveVolume'](arg1, arg2);
 }
 
+export function ResetSessionStorage(arg1) {
+  return window['go']['main']['App']['ResetSessionStorage'](arg1);
+}
+
 export function RestartContainer(arg1, arg2) {
   return window['go']['main']['App']['RestartContainer'](arg1, arg2);
 }
@@ -128,6 +136,10 @@ export function StartTerminal(arg1, arg2, arg3, arg4) {
 
 export function StopContainer(arg1, arg2) {
   return window['go']['main']['App']['StopContainer'](arg1, arg2);
+}
+
+export function ShrinkSessionStorage(arg1) {
+  return window['go']['main']['App']['ShrinkSessionStorage'](arg1);
 }
 
 export function StopStream(arg1) {

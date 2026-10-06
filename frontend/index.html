@@ -48,33 +48,23 @@
   </button>
   <button class="tab" id="tab-sessions" role="tab" type="button" data-view="sessions"
           aria-selected="false" aria-controls="view-sessions" tabindex="-1"
-          title="会话" aria-label="会话视图">
-    <span class="tab-icon" aria-hidden="true">🔌</span>会话
+          title="会话与其磁盘存储" aria-label="会话与存储视图">
+    <span class="tab-icon" aria-hidden="true">🔌</span>会话与存储
   </button>
-  <button class="tab" id="tab-volumes" role="tab" type="button" data-view="volumes"
-          aria-selected="false" aria-controls="view-volumes" tabindex="-1"
-          title="卷" aria-label="卷视图">
-    <span class="tab-icon" aria-hidden="true">💽</span>卷
+  <button class="tab" id="tab-resources" role="tab" type="button" data-view="resources"
+          aria-selected="false" aria-controls="view-resources" tabindex="-1"
+          title="卷与网络" aria-label="资源视图">
+    <span class="tab-icon" aria-hidden="true">💽</span>资源
   </button>
-  <button class="tab" id="tab-networks" role="tab" type="button" data-view="networks"
-          aria-selected="false" aria-controls="view-networks" tabindex="-1"
-          title="网络" aria-label="网络视图">
-    <span class="tab-icon" aria-hidden="true">🌐</span>网络
-  </button>
-  <button class="tab" id="tab-env" role="tab" type="button" data-view="env"
-          aria-selected="false" aria-controls="view-env" tabindex="-1"
-          title="环境自检" aria-label="环境自检视图">
-    <span class="tab-icon" aria-hidden="true">🩺</span>环境自检
+  <button class="tab" id="tab-diagnostics" role="tab" type="button" data-view="diagnostics"
+          aria-selected="false" aria-controls="view-diagnostics" tabindex="-1"
+          title="环境自检与设置" aria-label="诊断视图">
+    <span class="tab-icon" aria-hidden="true">🩺</span>诊断
   </button>
   <button class="tab" id="tab-tasks" role="tab" type="button" data-view="tasks"
           aria-selected="false" aria-controls="view-tasks" tabindex="-1"
           title="任务" aria-label="任务视图">
     <span class="tab-icon" aria-hidden="true">⏳</span>任务
-  </button>
-  <button class="tab" id="tab-settings" role="tab" type="button" data-view="settings"
-          aria-selected="false" aria-controls="view-settings" tabindex="-1"
-          title="设置" aria-label="设置视图">
-    <span class="tab-icon" aria-hidden="true">⚙️</span>设置
   </button>
 </nav>
 
@@ -221,141 +211,217 @@
     </div>
   </section>
 
-  <!-- ==================== 会话 ==================== -->
-  <section class="view" id="view-sessions" role="tabpanel" aria-labelledby="tab-sessions" data-view="sessions" hidden>
-    <div class="toolbar">
-      <p class="muted" style="margin:0; max-width:820px;">
-        wslc 会话是本地客户端与容器服务之间的连接通道。默认会话 <code>default</code> 由 wslc 在首次使用时自动创建，其它会话通过命令行 <code>wslc &lt;command&gt; --session &lt;name&gt;</code> 使用。<strong>终止会话会结束其上所有容器进程</strong>，请谨慎操作。
-      </p>
-      <span class="toolbar-spacer"></span>
-      <span class="muted mono" id="sess-count">—</span>
-      <button class="btn btn-icon" type="button" id="btn-sess-reload"
-              title="刷新会话列表 (F5)" aria-label="刷新会话列表">⟳</button>
+  <!-- ==================== 会话与存储 ==================== -->
+  <section class="view" id="view-sessions" role="tabpanel" aria-labelledby="tab-sessions" data-view="sessions">
+    <div class="subtabs" role="tablist" aria-label="会话与存储子视图">
+      <button class="subtab" id="subtab-sessions-sessions" role="tab" type="button"
+              data-subview="sessions" aria-selected="true" aria-controls="panel-sessions" tabindex="0"
+              title="会话" aria-label="会话">会话</button>
+      <button class="subtab" id="subtab-sessions-storage" role="tab" type="button"
+              data-subview="storage" aria-selected="false" aria-controls="panel-storage" tabindex="-1"
+              title="会话磁盘存储" aria-label="存储">💾 存储</button>
     </div>
 
-    <div class="table-wrap">
-      <table class="grid" id="sess-table">
-        <caption class="sr-only">会话列表</caption>
-        <thead>
-          <tr>
-            <th scope="col" class="col-id">ID</th>
-            <th scope="col" class="col-name">名称</th>
-            <th scope="col" class="col-driver">创建者 PID</th>
-            <th scope="col" class="col-actions">操作</th>
-          </tr>
-        </thead>
-        <tbody id="sess-body"></tbody>
-      </table>
+    <div class="panel" id="panel-sessions">
+      <div class="toolbar">
+        <p class="muted" style="margin:0; max-width:820px;">
+          wslc 会话是本地客户端与容器服务之间的连接通道。默认会话 <code>default</code> 由 wslc 在首次使用时自动创建，其它会话通过命令行 <code>wslc &lt;command&gt; --session &lt;name&gt;</code> 使用。<strong>终止会话会结束其上所有容器进程</strong>，请谨慎操作。
+        </p>
+        <span class="toolbar-spacer"></span>
+        <span class="muted mono" id="sess-count">—</span>
+        <button class="btn btn-icon" type="button" id="btn-sess-reload"
+                title="刷新会话列表 (F5)" aria-label="刷新会话列表">⟳</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="grid" id="sess-table">
+          <caption class="sr-only">会话列表</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="col-id">ID</th>
+              <th scope="col" class="col-name">名称</th>
+              <th scope="col" class="col-driver">创建者 PID</th>
+              <th scope="col" class="col-actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="sess-body"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
-  <!-- ==================== 卷 ==================== -->
-  <section class="view" id="view-volumes" role="tabpanel" aria-labelledby="tab-volumes" data-view="volumes" hidden>
-    <div class="toolbar">
-      <form class="inline-form" id="vol-form" autocomplete="off">
-        <label class="field field-inline">
-          <span class="field-label">名称 <em class="req">*</em></span>
-          <input class="input mono" id="vol-name" type="text" placeholder="my-volume"
-                 required title="卷名称" aria-label="卷名称">
-        </label>
-        <label class="field field-inline">
-          <span class="field-label">驱动</span>
-          <input class="input mono" id="vol-driver" type="text" placeholder="local"
-                 title="卷驱动，默认 local" aria-label="卷驱动">
-        </label>
-        <button class="btn btn-primary" type="submit" id="btn-vol-create"
-                title="创建卷" aria-label="创建卷">创建卷</button>
-      </form>
-      <span class="toolbar-spacer"></span>
-      <span class="muted mono" id="vol-count">—</span>
-      <button class="btn btn-icon" type="button" id="btn-vol-reload"
-              title="刷新卷列表 (F5)" aria-label="刷新卷列表">⟳</button>
+      <div class="panel" id="panel-storage" hidden>
+        <div class="toolbar">
+          <p class="muted" style="margin:0; max-width:860px;">
+            每个 wslc 会话的根文件系统都是一个 <code>storage.vhdx</code> 动态磁盘（位于 <code>%LOCALAPPDATA%\wslc\sessions\&lt;会话名&gt;\</code>）。镜像层、构建缓存与卷数据全部落在其中，<strong>这是 <code>%LOCALAPPDATA%\wslc</code> 占用大量磁盘的真正原因</strong>。<code>wslc system session terminate</code> 只停止会话 VM，<em>不会</em>删除或截断这个文件。
+          </p>
+          <span class="toolbar-spacer"></span>
+          <span class="muted mono">合计 <strong id="stor-total">—</strong></span>
+          <span class="muted mono" id="stor-count">—</span>
+          <button class="btn btn-icon" type="button" id="btn-stor-reload"
+                  title="刷新存储列表 (F5)" aria-label="刷新存储列表">⟳</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="grid" id="stor-table">
+            <caption class="sr-only">会话磁盘存储</caption>
+            <thead>
+              <tr>
+                <th scope="col" class="col-name">会话</th>
+                <th scope="col" class="col-size">磁盘占用</th>
+                <th scope="col" class="col-state">文件</th>
+                <th scope="col" class="col-driver">会话 VM</th>
+                <th scope="col" class="col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody id="stor-body"></tbody>
+          </table>
+        </div>
+      </div>
+  </section>
+
+  <!-- ==================== 资源：卷与网络 ==================== -->
+  <section class="view" id="view-resources" role="tabpanel" aria-labelledby="tab-resources" data-view="resources" hidden>
+    <div class="subtabs" role="tablist" aria-label="资源子视图">
+      <button class="subtab" id="subtab-resources-volumes" role="tab" type="button"
+              data-subview="volumes" aria-selected="true" aria-controls="panel-volumes" tabindex="0"
+              title="卷" aria-label="卷">💽 卷</button>
+      <button class="subtab" id="subtab-resources-networks" role="tab" type="button"
+              data-subview="networks" aria-selected="false" aria-controls="panel-networks" tabindex="-1"
+              title="网络" aria-label="网络">🌐 网络</button>
     </div>
 
-    <div class="table-wrap">
-      <table class="grid" id="vol-table">
-        <caption class="sr-only">卷列表</caption>
-        <thead>
-          <tr>
-            <th scope="col" class="col-name">名称</th>
-            <th scope="col" class="col-driver">驱动</th>
-            <th scope="col" class="col-scope">范围</th>
-            <th scope="col" class="col-mount">挂载点</th>
-            <th scope="col" class="col-created">创建时间</th>
-            <th scope="col" class="col-actions">操作</th>
-          </tr>
-        </thead>
-        <tbody id="vol-body"></tbody>
-      </table>
+    <div class="panel" id="panel-volumes">
+      <div class="toolbar">
+        <form class="inline-form" id="vol-form" autocomplete="off">
+          <label class="field field-inline">
+            <span class="field-label">名称 <em class="req">*</em></span>
+            <input class="input mono" id="vol-name" type="text" placeholder="my-volume"
+                   required title="卷名称" aria-label="卷名称">
+          </label>
+          <label class="field field-inline">
+            <span class="field-label">驱动</span>
+            <input class="input mono" id="vol-driver" type="text" placeholder="local"
+                   title="卷驱动，默认 local" aria-label="卷驱动">
+          </label>
+          <button class="btn btn-primary" type="submit" id="btn-vol-create"
+                  title="创建卷" aria-label="创建卷">创建卷</button>
+        </form>
+        <span class="toolbar-spacer"></span>
+        <span class="muted mono" id="vol-count">—</span>
+        <button class="btn btn-icon" type="button" id="btn-vol-reload"
+                title="刷新卷列表 (F5)" aria-label="刷新卷列表">⟳</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="grid" id="vol-table">
+          <caption class="sr-only">卷列表</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="col-name">名称</th>
+              <th scope="col" class="col-driver">驱动</th>
+              <th scope="col" class="col-scope">范围</th>
+              <th scope="col" class="col-mount">挂载点</th>
+              <th scope="col" class="col-created">创建时间</th>
+              <th scope="col" class="col-actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="vol-body"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
-  <!-- ==================== 网络 ==================== -->
-  <section class="view" id="view-networks" role="tabpanel" aria-labelledby="tab-networks" data-view="networks" hidden>
-    <div class="toolbar">
-      <form class="inline-form" id="net-form" autocomplete="off">
-        <label class="field field-inline">
-          <span class="field-label">名称 <em class="req">*</em></span>
-          <input class="input mono" id="net-name" type="text" placeholder="my-net"
-                 required title="网络名称" aria-label="网络名称">
-        </label>
-        <label class="field field-inline">
-          <span class="field-label">驱动</span>
-          <input class="input mono" id="net-driver" type="text" placeholder="bridge"
-                 title="网络驱动，默认 bridge" aria-label="网络驱动">
-        </label>
-        <label class="field field-inline">
-          <span class="field-label">子网</span>
-          <input class="input mono" id="net-subnet" type="text" placeholder="172.20.0.0/16"
-                 title="CIDR 子网" aria-label="子网">
-        </label>
-        <label class="field field-inline">
-          <span class="field-label">网关</span>
-          <input class="input mono" id="net-gateway" type="text" placeholder="172.20.0.1"
-                 title="网关地址" aria-label="网关">
-        </label>
-        <label class="check" title="创建内部网络（无外部路由）">
-          <input type="checkbox" id="net-internal"><span>internal</span>
-        </label>
-        <button class="btn btn-primary" type="submit" id="btn-net-create"
-                title="创建网络" aria-label="创建网络">创建网络</button>
-      </form>
-      <span class="toolbar-spacer"></span>
-      <span class="muted mono" id="net-count">—</span>
-      <button class="btn btn-icon" type="button" id="btn-net-reload"
-              title="刷新网络列表 (F5)" aria-label="刷新网络列表">⟳</button>
-    </div>
+    <div class="panel" id="panel-networks" hidden>
+      <div class="toolbar">
+        <form class="inline-form" id="net-form" autocomplete="off">
+          <label class="field field-inline">
+            <span class="field-label">名称 <em class="req">*</em></span>
+            <input class="input mono" id="net-name" type="text" placeholder="my-net"
+                   required title="网络名称" aria-label="网络名称">
+          </label>
+          <label class="field field-inline">
+            <span class="field-label">驱动</span>
+            <input class="input mono" id="net-driver" type="text" placeholder="bridge"
+                   title="网络驱动，默认 bridge" aria-label="网络驱动">
+          </label>
+          <label class="field field-inline">
+            <span class="field-label">子网</span>
+            <input class="input mono" id="net-subnet" type="text" placeholder="172.20.0.0/16"
+                   title="CIDR 子网" aria-label="子网">
+          </label>
+          <label class="field field-inline">
+            <span class="field-label">网关</span>
+            <input class="input mono" id="net-gateway" type="text" placeholder="172.20.0.1"
+                   title="网关地址" aria-label="网关">
+          </label>
+          <label class="check" title="创建内部网络（无外部路由）">
+            <input type="checkbox" id="net-internal"><span>internal</span>
+          </label>
+          <button class="btn btn-primary" type="submit" id="btn-net-create"
+                  title="创建网络" aria-label="创建网络">创建网络</button>
+        </form>
+        <span class="toolbar-spacer"></span>
+        <span class="muted mono" id="net-count">—</span>
+        <button class="btn btn-icon" type="button" id="btn-net-reload"
+                title="刷新网络列表 (F5)" aria-label="刷新网络列表">⟳</button>
+      </div>
 
-    <div class="table-wrap">
-      <table class="grid" id="net-table">
-        <caption class="sr-only">网络列表</caption>
-        <thead>
-          <tr>
-            <th scope="col" class="col-name">名称</th>
-            <th scope="col" class="col-id">ID</th>
-            <th scope="col" class="col-driver">驱动</th>
-            <th scope="col" class="col-scope">范围</th>
-            <th scope="col" class="col-created">创建时间</th>
-            <th scope="col" class="col-actions">操作</th>
-          </tr>
-        </thead>
-        <tbody id="net-body"></tbody>
-      </table>
+      <div class="table-wrap">
+        <table class="grid" id="net-table">
+          <caption class="sr-only">网络列表</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="col-name">名称</th>
+              <th scope="col" class="col-id">ID</th>
+              <th scope="col" class="col-driver">驱动</th>
+              <th scope="col" class="col-scope">范围</th>
+              <th scope="col" class="col-created">创建时间</th>
+              <th scope="col" class="col-actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="net-body"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
-  <!-- ==================== 环境自检 ==================== -->
-  <section class="view" id="view-env" role="tabpanel" aria-labelledby="tab-env" data-view="env" hidden>
-    <div class="toolbar">
-      <button class="btn btn-primary" type="button" id="btn-env-check"
-              title="重新执行环境自检 (EnvCheck)" aria-label="重新执行环境自检">重新自检</button>
-      <label class="check" title="每 15 秒自动自检一次">
-        <input type="checkbox" id="env-auto"><span>自动（15s）</span>
-      </label>
-      <span class="toolbar-spacer"></span>
-      <span class="muted" id="env-checked">—</span>
+  <!-- ==================== 诊断：环境自检与设置 ==================== -->
+  <section class="view" id="view-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" data-view="diagnostics" hidden>
+    <div class="subtabs" role="tablist" aria-label="诊断子视图">
+      <button class="subtab" id="subtab-diagnostics-env" role="tab" type="button"
+              data-subview="env" aria-selected="true" aria-controls="panel-env" tabindex="0"
+              title="环境自检" aria-label="环境自检">🩺 环境自检</button>
+      <button class="subtab" id="subtab-diagnostics-settings" role="tab" type="button"
+              data-subview="settings" aria-selected="false" aria-controls="panel-settings" tabindex="-1"
+              title="设置" aria-label="设置">⚙️ 设置</button>
     </div>
-    <div id="env-content" class="env-content"></div>
+
+    <div class="panel" id="panel-env">
+      <div class="toolbar">
+        <button class="btn btn-primary" type="button" id="btn-env-check"
+                title="重新执行环境自检 (EnvCheck)" aria-label="重新执行环境自检">重新自检</button>
+        <label class="check" title="每 15 秒自动自检一次">
+          <input type="checkbox" id="env-auto"><span>自动（15s）</span>
+        </label>
+        <span class="toolbar-spacer"></span>
+        <span class="muted" id="env-checked">—</span>
+      </div>
+      <div id="env-content" class="env-content"></div>
+    </div>
+
+    <div class="panel" id="panel-settings" hidden>
+      <div class="settings-toolbar">
+        <button class="btn btn-primary" type="button" id="btn-settings-save"
+                title="保存代理与镜像源设置" aria-label="保存设置">💾 保存</button>
+        <button class="btn" type="button" id="btn-settings-reload"
+                title="重新加载设置（放弃未保存的修改）" aria-label="重新加载设置">↻ 重载</button>
+        <span class="toolbar-spacer"></span>
+        <span id="settings-dirty" class="status-pill off" hidden title="有未保存的修改">未保存</span>
+        <span class="muted mono" id="settings-status">—</span>
+      </div>
+      <div id="settings-content" class="env-content"></div>
+    </div>
   </section>
 
   <!-- ==================== 任务 ==================== -->
@@ -387,21 +453,6 @@
       </table>
     </div>
   </section>
-
-  <!-- ==================== 设置 ==================== -->
-  <section class="view" id="view-settings" role="tabpanel" aria-labelledby="tab-settings" data-view="settings" hidden>
-    <div class="settings-toolbar">
-      <button class="btn btn-primary" type="button" id="btn-settings-save"
-              title="保存代理与镜像源设置" aria-label="保存设置">💾 保存</button>
-      <button class="btn" type="button" id="btn-settings-reload"
-              title="重新加载设置（放弃未保存的修改）" aria-label="重新加载设置">↻ 重载</button>
-      <span class="toolbar-spacer"></span>
-      <span id="settings-dirty" class="status-pill off" hidden title="有未保存的修改">未保存</span>
-      <span class="muted mono" id="settings-status">—</span>
-    </div>
-    <div id="settings-content" class="env-content"></div>
-  </section>
-
 </main>
 
 <footer class="statusbar">

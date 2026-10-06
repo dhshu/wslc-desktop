@@ -210,6 +210,81 @@ func (r *ExecRunner) Available(ctx context.Context) error {
 	return err
 }
 
+// RunTool executes a non-wslc Windows executable the same way Run executes
+// wslc: arguments as a vector (never a shell string), stdin fed from a string,
+// output captured up to the configured cap.
+//
+// It exists because shrinking a session VHDX requires diskpart, which is not a
+// wslc command and therefore cannot travel through the Spec/Runner interface
+// without pretending to be one. The Spec that RunTool returns is populated with
+// the real argv so callers can still assert what was executed.
+func (r *ExecRunner) RunTool(ctx context.Context, exe string, args []string, stdin, dir string) (Result, error) {
+	return r.runTool(ctx, exe, args, stdin, dir, 0)
+}
+
+// runTool is the implementation RunTool and its tests share. timeout is a
+// fixed duration so it stays readable at the call sites; zero uses the runner
+// default.
+func (r *ExecRunner) runTool(ctx context.Context, exe string, args []string, stdin, dir string, timeout time.Duration) (Result, error) {
+	if r == nil {
+		return Result{}, errors.New("wslc: nil ExecRunner")
+	}
+	if strings.TrimSpace(exe) == "" {
+		return Result{}, fmt.Errorf("%w: no executable configured", ErrExecutableNotFound)
+	}
+	spec := Spec{Args: append([]string(nil), args...), Stdin: stdin, Dir: dir, Timeout: timeout}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout == 0 {
+		timeout = r.timeout
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	start := time.Now()
+	cmd := toolCommandFactory(ctx, exe, spec)
+	cmd.Dir = dir
+	if env := r.env; len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
+	var stdout, stderr limitedBuffer
+	stdout.limit, stderr.limit = r.maxOutput, r.maxOutput
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
+
+	waitErr := cmd.Run()
+	res := Result{
+		Args:      append([]string(nil), spec.Args...),
+		Stdout:    stdout.String(),
+		Stderr:    stderr.String(),
+		Duration:  time.Since(start),
+		Truncated: stdout.truncated || stderr.truncated,
+	}
+	if cmd.ProcessState != nil {
+		res.ExitCode = cmd.ProcessState.ExitCode()
+	}
+	return r.finish(ctx, spec, res, waitErr)
+}
+
+// toolCommandFactory mirrors defaultCommandFactory for an arbitrary executable.
+// Tests inject their own factory through WithCommandFactory when they need to
+// assert argv without launching a process.
+func toolCommandFactory(ctx context.Context, exe string, spec Spec) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, exe, spec.Args...)
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.HideWindow = true
+	return cmd
+}
+
 // command builds the *exec.Cmd for one invocation.
 func (r *ExecRunner) command(ctx context.Context, spec Spec) *exec.Cmd {
 	if ctx == nil {

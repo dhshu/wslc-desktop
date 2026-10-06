@@ -79,18 +79,46 @@ if (missingIds.length) fail(`app.js 引用了不存在的 DOM id：${missingIds.
 notes.push(`app.js 引用的 DOM id：${refs.size} 个，缺失 ${missingIds.length} 个`);
 
 /* ---------------------------------------------------------------- 4. 视图一致性 */
+/* VIEWS 是顶级分组；GROUPS 描述每个分组下的面板；合并标签页后
+   顶级 tab 与 view- 分组一一对应，面板 id 由 view- 或 panel- 前缀构成。 */
 const viewsBlock = appJs.match(/var VIEWS = \[([^\]]+)\]/);
 const views = viewsBlock ? viewsBlock[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean) : [];
 if (!views.length) fail('无法从 app.js 解析 VIEWS');
+const groupsBlock = appJs.match(/var GROUPS = \{([\s\S]*?)\n  \};/);
+const groups = {};
+if (groupsBlock) {
+  [...groupsBlock[1].matchAll(/(\w+):\s*\[([^\]]+)\]/g)].forEach((m) => {
+    groups[m[1]] = m[2].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
+  });
+}
+if (Object.keys(groups).length !== views.length) fail('无法从 app.js 解析 GROUPS 或与 VIEWS 不一致');
+
 const tabViews = [...indexHtml.matchAll(/id="tab-([a-z]+)"/g)].map((m) => m[1]);
-const panelViews = [...indexHtml.matchAll(/id="view-([a-z]+)"/g)].map((m) => m[1]);
+const viewSections = [...indexHtml.matchAll(/id="view-([a-z]+)"/g)].map((m) => m[1]);
 if (JSON.stringify(tabViews) !== JSON.stringify(views)) {
   fail(`app.js VIEWS=[${views}] 与 index.html tab 不一致：[${tabViews}]`);
 }
-if (JSON.stringify(panelViews) !== JSON.stringify(views)) {
-  fail(`app.js VIEWS=[${views}] 与 index.html panel 不一致：[${panelViews}]`);
+if (JSON.stringify(viewSections) !== JSON.stringify(views)) {
+  fail(`app.js VIEWS=[${views}] 与 index.html view- 分组不一致：[${viewSections}]`);
 }
-notes.push(`视图（tab = panel = VIEWS）：${views.join(' / ')}`);
+
+/* 每个面板必须有一个容器 id：单面板分组用 view-<name>，多面板分组用 panel-<name>。 */
+const allPanels = [];
+views.forEach((v) => groups[v].forEach((p) => allPanels.push([v, p])));
+allPanels.forEach(([v, p]) => {
+  const single = groups[v].length === 1;
+  const wantId = single ? `view-${p}` : `panel-${p}`;
+  if (!indexHtml.includes(`id="${wantId}"`)) {
+    fail(`面板 ${p}（属于 ${v}）缺少容器 id="${wantId}"`);
+  }
+  if (!single) {
+    const subtabId = `subtab-${v}-${p}`;
+    if (!indexHtml.includes(`id="${subtabId}"`)) {
+      fail(`面板 ${p}（属于 ${v}）缺少二级标签 id="${subtabId}"`);
+    }
+  }
+});
+notes.push(`视图（${views.length} 分组 / ${allPanels.length} 面板）：` + views.join(' / '));
 
 /* ---------------------------------------------------------------- 5. v3/v1 包 */
 /* 只在“可执行代码”里查，注释里提到包名属于文档说明，不算引用。 */

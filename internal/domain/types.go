@@ -193,14 +193,14 @@ func ShortID(id string) string {
 
 // Image is one row of `wslc image list`.
 type Image struct {
-	ID          string     `json:"ID"`
-	Repository  string     `json:"Repository"`
-	Tag         string     `json:"Tag"`
-	Digest      string     `json:"Digest"`
-	CreatedAt   string     `json:"CreatedAt"`
-	CreatedSince string    `json:"CreatedSince"`
-	Size        string     `json:"Size"`
-	Labels      string     `json:"Labels"`
+	ID           string `json:"ID"`
+	Repository   string `json:"Repository"`
+	Tag          string `json:"Tag"`
+	Digest       string `json:"Digest"`
+	CreatedAt    string `json:"CreatedAt"`
+	CreatedSince string `json:"CreatedSince"`
+	Size         string `json:"Size"`
+	Labels       string `json:"Labels"`
 }
 
 // Reference renders the image the way a user would type it.
@@ -255,12 +255,12 @@ type ContainerStats struct {
 
 // ClientInfo mirrors the Client section of `wslc info`.
 type ClientInfo struct {
-	Version        string `json:"Version"`
-	KernelVersion  string `json:"KernelVersion"`
+	Version         string `json:"Version"`
+	KernelVersion   string `json:"KernelVersion"`
 	Direct3DVersion string `json:"Direct3DVersion"`
-	DxCoreVersion  string `json:"DxCoreVersion"`
-	WindowsVersion string `json:"WindowsVersion"`
-	SettingsFile   string `json:"SettingsFile"`
+	DxCoreVersion   string `json:"DxCoreVersion"`
+	WindowsVersion  string `json:"WindowsVersion"`
+	SettingsFile    string `json:"SettingsFile"`
 }
 
 // Session is one entry of the Server.Sessions array in `wslc info`.
@@ -268,6 +268,32 @@ type Session struct {
 	ID         int    `json:"ID"`
 	Name       string `json:"Name"`
 	CreatorPid int    `json:"CreatorPid"`
+}
+
+// SessionStorage describes the on-disk footprint of one wslc session.
+//
+// wslc stores every session's root filesystem in a dynamic-disk VHDX at
+// <storagePath>\wslc\sessions\<sessionName>\storage.vhdx. The file is what makes
+// %LOCALAPPDATA%\wslc grow into the tens of gigabytes: image layers, build
+// cache and volumes all land inside it, and `system session terminate` stops the
+// session VM but never deletes or truncates the file. BytesOnDisk is what the
+// host filesystem actually charges for it (Length), which is the number a user
+// sees in Explorer.
+type SessionStorage struct {
+	// SessionName is the wslc session name, i.e. the directory under sessions\.
+	SessionName string `json:"SessionName"`
+	// Path is the absolute path of the storage.vhdx file ("" when absent).
+	Path string `json:"Path"`
+	// BytesOnDisk is the host-side size in bytes (0 when the file is missing).
+	BytesOnDisk int64 `json:"BytesOnDisk"`
+	// SizeText is a human-readable rendering of BytesOnDisk ("11.3 GB").
+	SizeText string `json:"SizeText"`
+	// Exists reports whether the storage file is present on disk.
+	Exists bool `json:"Exists"`
+	// Active reports whether the session currently has a running wslc session VM.
+	// A VHDX cannot be shrunken or deleted while its VM is attached, so every
+	// destructive action on the file is gated on this being false.
+	Active bool `json:"Active"`
 }
 
 // ServerInfo mirrors the Server section of `wslc info`.

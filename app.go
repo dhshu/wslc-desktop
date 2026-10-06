@@ -315,6 +315,31 @@ func (a *App) TerminateSession(sessionID int) (string, error) {
 	return a.svc.TerminateSession(a.callContext(), sessionID)
 }
 
+// ListSessionStorage reports the on-disk footprint of every wslc session
+// directory, including terminated ones. wslc does not expose this: the sessions
+// directory layout is internal and `system session list` only lists running
+// sessions — yet the storage of terminated sessions is exactly what makes
+// %LOCALAPPDATA%\wslc grow into the gigabytes.
+func (a *App) ListSessionStorage() ([]domain.SessionStorage, error) {
+	return a.svc.ListSessionStorage(a.callContext())
+}
+
+// ResetSessionStorage deletes one session's storage.vhdx, discarding the images,
+// containers, build cache and volumes stored in it. The session must be
+// terminated first: wslc holds the file open while its VM is running.
+func (a *App) ResetSessionStorage(sessionName string) (string, error) {
+	return a.svc.ResetSessionStorage(a.callContext(), sessionName)
+}
+
+// ShrinkSessionStorage runs diskpart to compact one session's dynamic VHDX and
+// return the unused extents to the host. wslc has no equivalent command, so this
+// is the only way to reclaim space without discarding the session's data. The
+// session must be terminated first; diskpart reads and writes the vhdx, this
+// tool never parses it.
+func (a *App) ShrinkSessionStorage(sessionName string) (string, error) {
+	return a.svc.ShrinkSessionStorage(a.callContext(), sessionName)
+}
+
 // ---------------------------------------------------------------------------
 // 卷与网络
 // ---------------------------------------------------------------------------
