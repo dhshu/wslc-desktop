@@ -150,6 +150,43 @@ notes.push(`视图（${views.length} 分组 / ${allPanels.length} 面板）：` 
   notes.push(`[hidden] 兜底规则：${hiddenRules.length} 条`);
 }
 
+/* ------------------------------------------------- 4c. 面板必须嵌在所属 view 内 */
+/* 回归点：错位的 </section> 会把 panel-storage / panel-networks 挤出 .view，
+   让它们变成 #main 的兄弟节点。#main 是 column flex，而 .panel.view-panel
+   又是 flex:1 1 auto —— 空壳的 section 与面板各分到一半高度，表现为
+   「二级标签下方一大片空白、内容被推到下半屏」。
+   注意：这种错位下开/闭标签数量仍然相等，所以只数标签是发现不了的，
+   必须真正按 section 配对扫描，再检查面板 id 落在所属 view 的区间内。 */
+{
+  const ranges = new Map();
+  for (const m of indexHtml.matchAll(/<section\b[^>]*id="view-([a-z]+)"[^>]*>/g)) {
+    let depth = 0;
+    let end = -1;
+    const scan = /<section\b|<\/section>/g;
+    scan.lastIndex = m.index;
+    let t;
+    while ((t = scan.exec(indexHtml)) !== null) {
+      depth += t[0] === '</section>' ? -1 : 1;
+      if (depth === 0) { end = t.index; break; }
+    }
+    if (end < 0) fail(`view-${m[1]} 的 </section> 不配对`);
+    else ranges.set(m[1], [m.index, end]);
+  }
+  if (ranges.size !== views.length) {
+    fail(`index.html 中配对成功的 view 分组数 ${ranges.size} != ${views.length}`);
+  }
+  allPanels.forEach(([v, p]) => {
+    const wantId = groups[v].length === 1 ? `view-${p}` : `panel-${p}`;
+    const at = indexHtml.indexOf(`id="${wantId}"`);
+    const range = ranges.get(v);
+    if (at < 0 || !range) return; /* 缺 id / 缺分组已由第 4 项报出 */
+    if (at < range[0] || at > range[1]) {
+      fail(`面板 ${wantId} 不在 <section id="view-${v}"> 内部 —— 错位的 </section> 会让它成为 #main 的兄弟节点，白占一半高度`);
+    }
+  });
+  notes.push(`view 分组配对：${ranges.size} 个（面板嵌套失败项见下）`);
+}
+
 /* ---------------------------------------------------------------- 5. v3/v1 包 */
 /* 只在“可执行代码”里查，注释里提到包名属于文档说明，不算引用。 */
 const stripJsComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');

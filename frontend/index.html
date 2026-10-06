@@ -248,36 +248,35 @@
         </table>
       </div>
     </div>
-  </section>
 
-      <div class="panel view-panel" id="panel-storage" hidden>
-        <p class="panel-hint muted">
-          每个 wslc 会话的根文件系统都是一个 <code>storage.vhdx</code> 动态磁盘（位于 <code>%LOCALAPPDATA%\wslc\sessions\&lt;会话名&gt;\</code>）。镜像层、构建缓存与卷数据全部落在其中，<strong>这是 <code>%LOCALAPPDATA%\wslc</code> 占用大量磁盘的真正原因</strong>。<code>wslc system session terminate</code> 只停止会话 VM，<em>不会</em>删除或截断这个文件。
-        </p>
-        <div class="toolbar">
-          <span class="toolbar-spacer"></span>
-          <span class="muted mono">合计 <strong id="stor-total">—</strong></span>
-          <span class="muted mono" id="stor-count">—</span>
-          <button class="btn btn-icon" type="button" id="btn-stor-reload"
-                  title="刷新存储列表 (F5)" aria-label="刷新存储列表">⟳</button>
-        </div>
-
-        <div class="table-wrap">
-          <table class="grid" id="stor-table">
-            <caption class="sr-only">会话磁盘存储</caption>
-            <thead>
-              <tr>
-                <th scope="col" class="col-name">会话</th>
-                <th scope="col" class="col-size">磁盘占用</th>
-                <th scope="col" class="col-state">文件</th>
-                <th scope="col" class="col-driver">会话 VM</th>
-                <th scope="col" class="col-actions">操作</th>
-              </tr>
-            </thead>
-            <tbody id="stor-body"></tbody>
-          </table>
-        </div>
+    <div class="panel view-panel" id="panel-storage" hidden>
+      <p class="panel-hint muted">
+        每个 wslc 会话的根文件系统都是一个 <code>storage.vhdx</code> 动态磁盘（位于 <code>%LOCALAPPDATA%\wslc\sessions\&lt;会话名&gt;\</code>）。镜像层、构建缓存与卷数据全部落在其中，<strong>这是 <code>%LOCALAPPDATA%\wslc</code> 占用大量磁盘的真正原因</strong>。<code>wslc system session terminate</code> 只停止会话 VM，<em>不会</em>删除或截断这个文件。
+      </p>
+      <div class="toolbar">
+        <span class="toolbar-spacer"></span>
+        <span class="muted mono">合计 <strong id="stor-total">—</strong></span>
+        <span class="muted mono" id="stor-count">—</span>
+        <button class="btn btn-icon" type="button" id="btn-stor-reload"
+                title="刷新存储列表 (F5)" aria-label="刷新存储列表">⟳</button>
       </div>
+
+      <div class="table-wrap">
+        <table class="grid" id="stor-table">
+          <caption class="sr-only">会话磁盘存储</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="col-name">会话</th>
+              <th scope="col" class="col-size">磁盘占用</th>
+              <th scope="col" class="col-state">文件</th>
+              <th scope="col" class="col-driver">会话 VM</th>
+              <th scope="col" class="col-actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="stor-body"></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <!-- ==================== 资源：卷与网络 ==================== -->
@@ -330,7 +329,6 @@
         </table>
       </div>
     </div>
-  </section>
 
     <div class="panel view-panel" id="panel-networks" hidden>
       <div class="toolbar">
