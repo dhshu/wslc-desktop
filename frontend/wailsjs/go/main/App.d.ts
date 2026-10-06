@@ -32,9 +32,9 @@ export function ListImages(arg1:boolean):Promise<Array<domain.Image>>;
 
 export function ListNetworks():Promise<Array<domain.Network>>;
 
-export function ListSessions():Promise<Array<domain.Session>>;
-
 export function ListSessionStorage():Promise<Array<domain.SessionStorage>>;
+
+export function ListSessions():Promise<Array<domain.Session>>;
 
 export function ListTasks():Promise<Array<service.Task>>;
 
@@ -64,6 +64,8 @@ export function RunContainer(arg1:service.RunContainerOptions):Promise<string>;
 
 export function SaveSettings(arg1:service.AppSettings):Promise<service.AppSettings>;
 
+export function ShrinkSessionStorage(arg1:string):Promise<string>;
+
 export function StartContainer(arg1:string):Promise<string>;
 
 export function StartLogs(arg1:string,arg2:service.LogsOptions):Promise<string>;
@@ -71,8 +73,6 @@ export function StartLogs(arg1:string,arg2:service.LogsOptions):Promise<string>;
 export function StartTerminal(arg1:string,arg2:service.ExecOptions,arg3:number,arg4:number):Promise<string>;
 
 export function StopContainer(arg1:string,arg2:number):Promise<string>;
-
-export function ShrinkSessionStorage(arg1:string):Promise<string>;
 
 export function StopStream(arg1:string):Promise<void>;
 

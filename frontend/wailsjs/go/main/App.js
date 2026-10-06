@@ -58,12 +58,12 @@ export function ListNetworks() {
   return window['go']['main']['App']['ListNetworks']();
 }
 
-export function ListSessions() {
-  return window['go']['main']['App']['ListSessions']();
-}
-
 export function ListSessionStorage() {
   return window['go']['main']['App']['ListSessionStorage']();
+}
+
+export function ListSessions() {
+  return window['go']['main']['App']['ListSessions']();
 }
 
 export function ListTasks() {
@@ -122,6 +122,10 @@ export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
 
+export function ShrinkSessionStorage(arg1) {
+  return window['go']['main']['App']['ShrinkSessionStorage'](arg1);
+}
+
 export function StartContainer(arg1) {
   return window['go']['main']['App']['StartContainer'](arg1);
 }
@@ -136,10 +140,6 @@ export function StartTerminal(arg1, arg2, arg3, arg4) {
 
 export function StopContainer(arg1, arg2) {
   return window['go']['main']['App']['StopContainer'](arg1, arg2);
-}
-
-export function ShrinkSessionStorage(arg1) {
-  return window['go']['main']['App']['ShrinkSessionStorage'](arg1);
 }
 
 export function StopStream(arg1) {
