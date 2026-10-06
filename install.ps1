@@ -1,4 +1,4 @@
-# 安装 wslc-desktop 到标准用户程序目录并创建开始菜单快捷方式
+﻿# 安装 wslc-desktop 到标准用户程序目录并创建开始菜单快捷方式
 #
 # 为什么需要这个脚本？
 # Windows SmartScreen/Defender 对未签名 exe 在「工作区/临时目录」（如 D:\）上的
