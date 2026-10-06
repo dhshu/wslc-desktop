@@ -454,8 +454,11 @@ input[type="search"].input { min-width: 190px; }
 .form-error[hidden] { display: none; }
 
 /* ============================ 表格 ============================ */
+/* .table-wrap 本身不做 flex:1 填充 —— 在子面板（.view-panel）内部，
+   面板是 block 布局，flex:1 不生效；表格应该紧贴上方工具条，而不是
+   被 flex 撑到面板底部再留空白。滚动由外层 .view-panel 提供。 */
 .table-wrap {
-  flex: 1 1 auto; min-height: 0;
+  flex: 0 0 auto;
   overflow: auto;                 /* 横向 + 纵向滚动 */
   background: var(--bg);
 }
