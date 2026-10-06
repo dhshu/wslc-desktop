@@ -961,18 +961,15 @@
 
   function selectView(view, opts) {
     if (VIEWS.indexOf(view) < 0) view = 'containers';
-    state.view = view;
-    var panels = GROUPS[view];
-    /* 记住进入该分组时的子视图，切走再切回时能回到原处 */
-    if (!SUB[view]) SUB[view] = panels[0];
+    var panels = GROUPS[view] || [view];
+    if (!SUB[view] || panels.indexOf(SUB[view]) < 0) SUB[view] = panels[0];
     var active = SUB[view];
-    if (panels.indexOf(active) < 0) active = panels[0];
-    SUB[view] = active;
+    state.view = view;
 
     VIEWS.forEach(function (v) {
       var tab = $('tab-' + v);
       var sec = $('view-' + v);
-      var on = v === view;
+      var on = (v === view);
       if (tab) {
         tab.setAttribute('aria-selected', on ? 'true' : 'false');
         tab.tabIndex = on ? 0 : -1;
@@ -980,7 +977,7 @@
       if (sec) sec.hidden = !on;
     });
 
-    /* 分组内：只让当前子面板可见 */
+    /* 分组内：先全部隐藏，再显示当前子面板。 */
     Object.keys(GROUPS).forEach(function (v) {
       GROUPS[v].forEach(function (panel) {
         var el = panelEl(panel);
@@ -988,18 +985,18 @@
       });
     });
 
-    /* 子视图切换按钮的选中态 */
+    /* 二级标签的选中态 */
     Object.keys(GROUPS).forEach(function (v) {
-      if (GROUPS[v].length < 2) return;
+      if (!GROUPS[v] || GROUPS[v].length < 2) return;
       GROUPS[v].forEach(function (panel) {
         var btn = $('subtab-' + v + '-' + panel);
-        if (btn) btn.setAttribute('aria-selected', v === view && panel === active ? 'true' : 'false');
+        if (btn) btn.setAttribute('aria-selected', (v === view && panel === active) ? 'true' : 'false');
       });
     });
 
     try {
       var hash = '#/' + view;
-      if (SUB[view] && SUB[view] !== GROUPS[view][0]) hash += '/' + SUB[view];
+      if (SUB[view] !== panels[0]) hash += '/' + SUB[view];
       if (location.hash !== hash) history.replaceState(null, '', hash);
     } catch (e) { /* file:// 下可能受限，忽略 */ }
     if (!opts || opts.force !== false) loadPanel(active);
