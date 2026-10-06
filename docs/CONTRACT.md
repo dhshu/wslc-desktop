@@ -49,11 +49,13 @@ func (e *ExitError) Unwrap() error   // 映射到上述 sentinel
 ```
 
 `CommandKind` 常量（**完整列表，新增必须通知 Lead**）：
-`CmdVersion, CmdInfo, CmdSessionList, CmdContainerList, CmdContainerStart,
-CmdContainerStop, CmdContainerKill, CmdContainerRst, CmdContainerRm,
+`CmdVersion, CmdInfo, CmdSessionList, CmdSessionTerminate,
+CmdContainerList, CmdContainerStart, CmdContainerStop,
+CmdContainerKill, CmdContainerRst, CmdContainerRm,
 CmdContainerPrune, CmdContainerRun, CmdContainerLogs, CmdContainerExec,
 CmdContainerStats, CmdContainerIns, CmdImageList, CmdImagePull, CmdImagePush,
 CmdImageBuild, CmdImageRm, CmdImageTag, CmdImagePrune, CmdImageIns,
+CmdImageSave, CmdImageLoad,
 CmdVolumeList, CmdVolumeCreate, CmdVolumeRm, CmdNetworkList, CmdNetworkCreate,
 CmdNetworkRm, CmdEvents`
 
@@ -247,6 +249,12 @@ func (s *Service) BuildImage(ctx context.Context, opts BuildOptions) (string, er
 func (s *Service) RemoveImage(ctx context.Context, ref string, force bool) (string, error)
 func (s *Service) TagImage(ctx context.Context, source, target string) (string, error)
 func (s *Service) InspectImage(ctx context.Context, ref string) (json.RawMessage, error)
+func (s *Service) ExportImage(ctx context.Context, ref, dstPath string, overwrite bool) (string, error)
+func (s *Service) ImportImage(ctx context.Context, srcPath string) (string, error)
+
+// 会话
+func (s *Service) ListSessions(ctx context.Context) ([]domain.Session, error)
+func (s *Service) TerminateSession(ctx context.Context, sessionID int) (string, error)
 
 // 卷与网络
 func (s *Service) ListVolumes(ctx context.Context) ([]domain.Volume, error)

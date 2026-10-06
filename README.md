@@ -1,4 +1,4 @@
-# wslc Desktop
+# Wslc Desktop
 
 **用 Go + Wails 为 [wslc](https://learn.microsoft.com/en-us/windows/wsl/wsl-container) 写的 Windows 桌面管理工具。**
 

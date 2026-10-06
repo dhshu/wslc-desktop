@@ -1,4 +1,4 @@
-# frontend/ —— wslc Desktop 单页界面（零构建）
+# frontend/ —— Wslc Desktop 单页界面（零构建）
 
 仅 `index.html` + `styles.css` + `app.js`（classic script，无打包器、无 npm 依赖、无 CDN、无外部字体）。
 `wailsjs/` 下是**兜底**绑定与运行时实现，正常会被 `wails dev` / `wails build` 覆盖生成。

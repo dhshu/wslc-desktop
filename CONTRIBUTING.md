@@ -1,4 +1,4 @@
-# Contributing to wslc Desktop
+# Contributing to Wslc Desktop
 
 Thanks for your interest in contributing. This project is a community-driven
 front-end for [wslc](https://learn.microsoft.com/en-us/windows/wsl/wsl-container),

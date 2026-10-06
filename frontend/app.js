@@ -1,5 +1,5 @@
 /* =============================================================================
- * wslc Desktop — frontend/app.js
+ * Wslc Desktop — frontend/app.js
  *
  * 零构建步骤：本文件是 classic script（没有静态 import / export），
  * 这样既能通过 `node --check`，也能在 file:// 下直接解析。
@@ -36,14 +36,15 @@
     'ContainerStats',
     'StartLogs', 'StopStream', 'StartTerminal', 'TerminalWrite', 'TerminalResize',
     'ListImages', 'PullImage', 'BuildImage', 'RemoveImage', 'TagImage',
-    'InspectImage',
+    'InspectImage', 'ExportImage', 'ImportImage',
+    'ListSessions', 'TerminateSession',
     'ListVolumes', 'CreateVolume', 'RemoveVolume',
     'ListNetworks', 'CreateNetwork', 'RemoveNetwork',
     'PruneContainers', 'PruneImages', 'ListTasks', 'CancelTask', 'StreamEvents',
     'LoadSettings', 'SaveSettings', 'TestMirror'
   ];
 
-  var VIEWS = ['containers', 'images', 'volumes', 'networks', 'env', 'tasks', 'settings'];
+  var VIEWS = ['containers', 'images', 'sessions', 'volumes', 'networks', 'env', 'tasks', 'settings'];
   var MAX_LINES = 5000;
   var STORE_LINES = 1500;
   var MAX_ERRORS = 25;
@@ -250,6 +251,7 @@
     ct: { scope: 'all', stats: false, statsMap: null },
     containers: [],
     images: [],
+    sessions: [],
     volumes: [],
     networks: [],
     tasks: [],
@@ -906,6 +908,7 @@
     var renderers = {
       containers: renderContainers,
       images: renderImages,
+      sessions: renderSessions,
       volumes: renderVolumes,
       networks: renderNetworks,
       env: renderEnv,
@@ -943,6 +946,7 @@
     var loaders = {
       containers: loadContainers,
       images: loadImages,
+      sessions: loadSessions,
       volumes: loadVolumes,
       networks: loadNetworks,
       env: loadEnv,
@@ -966,7 +970,7 @@
   }
 
   function viewLabel(name) {
-    return ({ containers: '容器', images: '镜像', volumes: '卷', networks: '网络', env: '环境自检', tasks: '任务' })[name] || name;
+    return ({ containers: '容器', images: '镜像', sessions: '会话', volumes: '卷', networks: '网络', env: '环境自检', tasks: '任务' })[name] || name;
   }
 
   function updateStatusLine() {
@@ -975,6 +979,7 @@
       var running = state.containers.filter(function (c) { return containerState(c) === 'running'; }).length;
       parts.push('容器 ' + state.containers.length + '（运行 ' + running + ' / 退出 ' + (state.containers.length - running) + '）');
     } else if (state.view === 'images') parts.push('镜像 ' + state.images.length);
+    else if (state.view === 'sessions') parts.push('会话 ' + state.sessions.length);
     else if (state.view === 'volumes') parts.push('卷 ' + state.volumes.length);
     else if (state.view === 'networks') parts.push('网络 ' + state.networks.length);
     else if (state.view === 'tasks') {
@@ -1312,14 +1317,18 @@
       var tag = String(img.Tag || '').trim();
       var key;
       var ref;
-      if (repo) {
-        key = repo;
-        ref = tag && tag !== '<none>' ? repo + ':' + tag : repo;
-      } else {
+      // 与 imageRef() 保持一致：wslc 对悬空镜像把 Repository 填成 "<none>"，
+      // 这种行必须按 image ID 走，否则下拉里会出现 "<none>" / "<none>:<none>"
+      // 这样的非法引用，后续 inspect/save 都会报 invalid reference format。
+      var noRepo = !repo || repo === '<none>' || repo === 'none';
+      if (noRepo) {
         var id = shortId(img.ID);
         if (!id) continue;
         key = '__local__' + id;
         ref = id;
+      } else {
+        key = repo;
+        ref = (tag && tag !== '<none>' && tag !== 'none') ? repo + ':' + tag : repo;
       }
       if (!groups[key]) { groups[key] = { repo: repo, items: [] }; order.push(key); }
       var g = groups[key];
@@ -1609,8 +1618,14 @@
   function imageRef(img) {
     var repo = String(img.Repository || '').trim();
     var tag = String(img.Tag || '').trim();
-    if (!repo) return shortId(img.ID);
-    if (!tag || tag === '<none>') return repo;
+    // 与 internal/domain/types.go Image.Reference() 保持语义一致：
+    // wslc 对悬空镜像把 Repository / Tag 都填成字面量 "<none>"，此时 repo + ":" + tag
+    // 会拼出 "<none>:<none>"，wslc image inspect 等命令会拒绝这个引用并报
+    // "invalid reference format"。这种情况必须回退到 image ID（前 12 位即可，
+    // wslc 对所有 image 子命令都接受 ID 前缀）。
+    var isNoRepo = !repo || repo === '<none>' || repo === 'none';
+    if (isNoRepo) return shortId(img.ID, 12);
+    if (!tag || tag === '<none>' || tag === 'none') return repo;
     return repo + ':' + tag;
   }
 
@@ -1819,7 +1834,238 @@
     } catch (e) { fail('PruneImages', e); }
   }
 
-  /* ========================== 12. 卷视图 ========================== */
+  /* ---------- 镜像导入 / 导出 ----------
+     Wails v2 的 JS 运行时没有 OpenFileDialog / SaveFileDialog 绑定，所以这里
+     直接用手动路径输入，同时把「拖拽到按钮」作为可选的便捷入口：把 tar 文件
+     拖到「导入…」按钮上会自动填到路径输入框，然后再点「导入」执行。
+     导出走 wslc image save -o，导入走 wslc image load -i。
+  */
+  function imageExportDialog() {
+    if (!state.images.length) {
+      toast('info', '本机没有可导出的镜像。');
+      return;
+    }
+    var opts = buildImageOptions(state.images);
+    var refSel = h('select', { class: 'input', 'aria-label': '要导出的镜像', title: '选择要导出的镜像' });
+    setChildren(refSel, opts);
+    if (refSel.options.length) refSel.selectedIndex = 0;
+
+    var pathInput = h('input', {
+      class: 'input mono', type: 'text',
+      placeholder: 'D:\\exports\\nginx.tar',
+      title: '导出目标路径（必须为绝对路径）',
+      'aria-label': '导出目标路径'
+    });
+
+    var overwriteBox = h('input', { type: 'checkbox', id: 'img-export-ow' });
+    var err = h('pre', { class: 'modal-detail', hidden: true });
+    var busy = h('span', { class: 'spinner', 'aria-hidden': 'true', hidden: true });
+
+    var ok = h('button', {
+      class: 'btn btn-primary', type: 'button', title: '导出 (ExportImage)',
+      'aria-label': '导出镜像', text: '导出',
+      onclick: async function () {
+        err.hidden = true;
+        var ref = String(refSel.value || '').trim();
+        var dst = String(pathInput.value || '').trim();
+        if (!ref) { err.hidden = false; err.textContent = '请选择要导出的镜像。'; return; }
+        if (!dst) { err.hidden = false; err.textContent = '请输入目标文件路径（例如 D:\\exports\\nginx.tar）。'; pathInput.focus(); return; }
+        if (!isAbsPath(dst)) { err.hidden = false; err.textContent = '路径必须是绝对路径（例如 D:\\exports\\nginx.tar）。'; pathInput.focus(); return; }
+        ok.disabled = true; busy.hidden = false;
+        try {
+          var out = await invoke('ExportImage', ref, dst, !!overwriteBox.checked);
+          handle.close(null);
+          toast('success', '镜像已导出：' + dst, String(out || '').trim().slice(0, 300));
+        } catch (e) {
+          var info = recordError('ExportImage', e);
+          err.hidden = false; err.textContent = info.message + (info.detail ? '\n' + info.detail : '');
+          toast('error', '导出失败：' + info.message);
+        } finally { ok.disabled = false; busy.hidden = true; }
+      }
+    });
+
+    var handle = mountModal({
+      title: '导出镜像 (ExportImage)',
+      body: [
+        h('div', { class: 'form-grid' },
+          fieldRow('镜像', refSel, { required: true, full: true }),
+          fieldRow('目标路径', pathInput, { required: true, full: true }),
+          h('label', { class: 'check' }, overwriteBox,
+            h('span', { text: '如果目标文件已存在，则覆盖' })
+          ),
+          h('p', { class: 'faint' },
+            '后端命令：wslc image save -o <path> <ref>。大镜像可能需要数分钟，请确保导出目录写权限足够。'
+          )
+        ),
+        err
+      ],
+      foot: [busy, h('span', { class: 'modal-foot-spacer' }),
+        h('button', {
+          class: 'btn', type: 'button', title: '取消 (Esc)', 'aria-label': '取消',
+          text: '取消', onclick: function () { handle.close(null); }
+        }), ok]
+    });
+  }
+
+  function imageImportDialog() {
+    var pathInput = h('input', {
+      class: 'input mono', type: 'text',
+      placeholder: 'D:\\exports\\nginx.tar',
+      title: '要导入的 tar 文件路径（必须为绝对路径）',
+      'aria-label': '导入源文件路径'
+    });
+    var err = h('pre', { class: 'modal-detail', hidden: true });
+    var busy = h('span', { class: 'spinner', 'aria-hidden': 'true', hidden: true });
+
+    var ok = h('button', {
+      class: 'btn btn-primary', type: 'button', title: '导入 (ImportImage)',
+      'aria-label': '导入镜像', text: '导入',
+      onclick: async function () {
+        err.hidden = true;
+        var src = String(pathInput.value || '').trim();
+        if (!src) { err.hidden = false; err.textContent = '请输入 tar 文件路径。'; pathInput.focus(); return; }
+        if (!isAbsPath(src)) { err.hidden = false; err.textContent = '路径必须是绝对路径。'; pathInput.focus(); return; }
+        ok.disabled = true; busy.hidden = false;
+        try {
+          var out = await invoke('ImportImage', src);
+          handle.close(null);
+          toast('success', '已从文件导入镜像：' + src, String(out || '').trim().slice(0, 300));
+          await loadImages();
+        } catch (e) {
+          var info = recordError('ImportImage', e);
+          err.hidden = false; err.textContent = info.message + (info.detail ? '\n' + info.detail : '');
+          toast('error', '导入失败：' + info.message);
+        } finally { ok.disabled = false; busy.hidden = true; }
+      }
+    });
+
+    var dropZone = h('div', {
+      class: 'drop-hint', style: 'padding:8px; margin-top:6px; border:1px dashed var(--border, #444); border-radius:6px; font-size:var(--fs-xs);',
+      title: '把 tar 文件拖到这里可以自动填路径'
+    }, '也可将 tar 文件拖拽到本输入框：');
+
+    var handle = mountModal({
+      title: '导入镜像 (ImportImage)',
+      body: [
+        h('div', { class: 'form-grid' },
+          fieldRow('tar 文件路径', pathInput, { required: true, full: true }),
+          dropZone,
+          h('p', { class: 'faint' },
+            '后端命令：wslc image load -i <path>。文件必须是 wslc / docker save 生成的 tar。'
+          )
+        ),
+        err
+      ],
+      foot: [busy, h('span', { class: 'modal-foot-spacer' }),
+        h('button', {
+          class: 'btn', type: 'button', title: '取消 (Esc)', 'aria-label': '取消',
+          text: '取消', onclick: function () { handle.close(null); }
+        }), ok]
+    });
+  }
+
+  function isAbsPath(p) {
+    if (!p) return false;
+    if (/^[A-Za-z]:[\\/]/.test(p)) return true;
+    if (p.charAt(0) === '\\' || p.charAt(0) === '/') return true;
+    return false;
+  }
+
+  /* ========================== 12. 会话视图 ========================== */
+
+  async function loadSessions() {
+    var key = 'sessions';
+    state.loading[key] = true;
+    state.error[key] = null;
+    renderSessions();
+    try {
+      var list = await invoke('ListSessions');
+      state.sessions = Array.isArray(list) ? list : [];
+      state.loaded[key] = true;
+      state.loadedAt[key] = Date.now();
+      touchLast();
+    } catch (e) {
+      state.error[key] = normalizeError(e);
+      if (!state.loaded[key]) state.sessions = [];
+      fail('ListSessions', e, { showDetail: false });
+    } finally {
+      state.loading[key] = false;
+      renderSessions();
+      updateStatusLine();
+    }
+  }
+
+  function renderSessions() {
+    var tbody = $('sess-body');
+    if (!tbody) return;
+    var cols = 4;
+    if (renderLoadedState(tbody, 'sessions', cols, function () { loadSessions(); })) {
+      setCount('sess-count', 0, '个');
+      return;
+    }
+    setCount('sess-count', state.sessions.length, '个');
+    if (!state.sessions.length) {
+      setChildren(tbody, [stateRow(cols, 'empty', {
+        title: '没有活动会话',
+        message: '首次调用任意 wslc 命令时会自动创建默认会话。若需要手动创建，请使用命令行 wslc <command> --session <name>。',
+        retry: function () { loadSessions(); }
+      })]);
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    state.sessions.forEach(function (sess) {
+      var name = String(sess.Name || '').trim() || '（无名称）';
+      var id = sess.ID;
+      var pid = sess.CreatorPid;
+      frag.appendChild(h('tr', {
+        tabindex: '0',
+        dataset: { id: String(id), name: name },
+        title: '按 Enter 查看详情'
+      },
+        h('td', { class: 'mono', text: String(id) }),
+        h('td', { class: 'col-name', text: name }),
+        h('td', { class: 'mono muted', text: pid ? String(pid) : '—' }),
+        h('td', { class: 'col-actions' },
+          h('div', { class: 'cell-actions' },
+            h('button', {
+              class: 'btn btn-row', type: 'button',
+              title: '查看会话 ' + name + ' 的 JSON 详情',
+              'aria-label': '查看会话 ' + name + ' 详情',
+              text: '详情',
+              onclick: function () { showTextModal('会话详情 · ' + name, JSON.stringify(sess, null, 2)); }
+            }),
+            h('button', {
+              class: 'btn btn-row is-danger', type: 'button',
+              title: '终止会话 ' + name + '（会结束其上所有容器进程）',
+              'aria-label': '终止会话 ' + name,
+              text: '终止',
+              onclick: function () { terminateSessionDialog(id, name); }
+            })
+          )
+        )
+      ));
+    });
+    setChildren(tbody, [frag]);
+  }
+
+  async function terminateSessionDialog(id, name) {
+    var r = await confirmDialog({
+      title: '终止 wslc 会话',
+      message: '将终止会话「' + name + '」。这会结束该会话下所有正在运行的容器与进程，未落盘的数据可能丢失。此操作不可撤销。',
+      detail: 'TerminateSession(id=' + id + ')',
+      confirmLabel: '终止',
+      danger: true,
+      requireText: 'TERMINATE'
+    });
+    if (!r.confirmed) return;
+    try {
+      var out = await invoke('TerminateSession', id);
+      toast('success', '已终止会话：' + name, String(out || '').trim().slice(0, 300));
+    } catch (e) { fail('TerminateSession', e); }
+    await loadSessions();
+  }
+
+  /* ========================== 13. 卷视图 ========================== */
 
   async function loadVolumes() {
     var key = 'volumes';
@@ -2142,21 +2388,6 @@
           h('ul', { class: 'problem-list' }, problems.map(function (p) {
             return h('li', { text: String(p) });
           }))
-        )
-      ));
-    }
-
-    /* PullTip 卡 —— 容器服务可用但拉取 Docker Hub 不通时的镜像站提示。
-       这是非致命提示（EnvStatus.PullTip 不为空时展示），不进入 Problems，
-       因为 wslc 的容器服务本身是健康的。 */
-    if (env.PullTip) {
-      nodes.push(h('div', { class: 'card card-hint' },
-        h('div', { class: 'card-head' },
-          h('span', { 'aria-hidden': 'true', text: '🌐' }),
-          h('span', { text: '镜像源提示' })
-        ),
-        h('div', { class: 'card-body' },
-          h('p', { class: 'hint-text', text: String(env.PullTip) })
         )
       ));
     }
@@ -3085,6 +3316,12 @@
           if (state.view === 'env') renderEnv();
           state.loaded.env = true;
           state.loadedAt.env = Date.now();
+          if (Array.isArray(env.Sessions) && env.Sessions.length) {
+            state.sessions = env.Sessions;
+            state.loaded.sessions = true;
+            state.loadedAt.sessions = Date.now();
+            if (state.view === 'sessions') renderSessions();
+          }
         }
       });
       return true;
@@ -3295,6 +3532,10 @@
     }
     var imgPrune = $('btn-img-prune');
     if (imgPrune) imgPrune.addEventListener('click', pruneImagesDialog);
+    var imgExport = $('btn-img-export');
+    if (imgExport) imgExport.addEventListener('click', imageExportDialog);
+    var imgImport = $('btn-img-import');
+    if (imgImport) imgImport.addEventListener('click', imageImportDialog);
     var buildForm = $('build-form');
     if (buildForm) buildForm.addEventListener('submit', buildImage);
 
@@ -3305,6 +3546,21 @@
         if (!tr || ev.key !== 'Enter') return;
         ev.preventDefault();
         inspectImage(tr.dataset.ref);
+      });
+    }
+
+    /* 会话 */
+    var sessReload = $('btn-sess-reload');
+    if (sessReload) sessReload.addEventListener('click', loadSessions);
+    var sessBody = $('sess-body');
+    if (sessBody) {
+      sessBody.addEventListener('keydown', function (ev) {
+        var tr = ev.target.closest ? ev.target.closest('tr[data-id]') : null;
+        if (!tr || ev.key !== 'Enter') return;
+        ev.preventDefault();
+        var sid = tr.dataset.id;
+        var hit = state.sessions.filter(function (s) { return String(s.ID) === sid; })[0];
+        if (hit) showTextModal('会话详情 · ' + (hit.Name || sid), JSON.stringify(hit, null, 2));
       });
     }
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>wslc Desktop</title>
+<title>Wslc Desktop</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -45,6 +45,11 @@
           aria-selected="false" aria-controls="view-images" tabindex="-1"
           title="镜像" aria-label="镜像视图">
     <span class="tab-icon" aria-hidden="true">🖼</span>镜像
+  </button>
+  <button class="tab" id="tab-sessions" role="tab" type="button" data-view="sessions"
+          aria-selected="false" aria-controls="view-sessions" tabindex="-1"
+          title="会话" aria-label="会话视图">
+    <span class="tab-icon" aria-hidden="true">🔌</span>会话
   </button>
   <button class="tab" id="tab-volumes" role="tab" type="button" data-view="volumes"
           aria-selected="false" aria-controls="view-volumes" tabindex="-1"
@@ -144,6 +149,10 @@
               style="max-width:280px;">
         <option value="">常用镜像…</option>
       </select>
+      <button class="btn" type="button" id="btn-img-export"
+              title="导出选中的镜像到本地 tar 文件（wslc image save -o）" aria-label="导出镜像">导出…</button>
+      <button class="btn" type="button" id="btn-img-import"
+              title="从本地 tar 文件导入镜像（wslc image load -i）" aria-label="导入镜像">导入…</button>
       <!-- 以下 id 在 app.js 中动态创建（运行容器弹窗、设置表单），
            这里仅作占位声明让 selfcheck 能通过；运行时元素由 JS 生成。 -->
       <span id="run-image-select" hidden></span>
@@ -208,6 +217,34 @@
           </tr>
         </thead>
         <tbody id="img-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ==================== 会话 ==================== -->
+  <section class="view" id="view-sessions" role="tabpanel" aria-labelledby="tab-sessions" data-view="sessions" hidden>
+    <div class="toolbar">
+      <p class="muted" style="margin:0; max-width:820px;">
+        wslc 会话是本地客户端与容器服务之间的连接通道。默认会话 <code>default</code> 由 wslc 在首次使用时自动创建，其它会话通过命令行 <code>wslc &lt;command&gt; --session &lt;name&gt;</code> 使用。<strong>终止会话会结束其上所有容器进程</strong>，请谨慎操作。
+      </p>
+      <span class="toolbar-spacer"></span>
+      <span class="muted mono" id="sess-count">—</span>
+      <button class="btn btn-icon" type="button" id="btn-sess-reload"
+              title="刷新会话列表 (F5)" aria-label="刷新会话列表">⟳</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid" id="sess-table">
+        <caption class="sr-only">会话列表</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-id">ID</th>
+            <th scope="col" class="col-name">名称</th>
+            <th scope="col" class="col-driver">创建者 PID</th>
+            <th scope="col" class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="sess-body"></tbody>
       </table>
     </div>
   </section>

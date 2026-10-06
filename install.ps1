@@ -1,4 +1,4 @@
-﻿# 安装 wslc-desktop 到标准用户程序目录并创建开始菜单快捷方式
+# 安装 wslc-desktop 到标准用户程序目录并创建开始菜单快捷方式
 #
 # 为什么需要这个脚本？
 # Windows SmartScreen/Defender 对未签名 exe 在「工作区/临时目录」（如 D:\）上的
@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 $SourceExe = Join-Path $PSScriptRoot "build\bin\wslc-desktop.exe"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\wslc-desktop"
 $AppExe = Join-Path $InstallDir "wslc-desktop.exe"
-$ShortcutName = "wslc Desktop"
+$ShortcutName = "Wslc Desktop"
 $StartMenu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
 
 $sourceExists = Test-Path $SourceExe
@@ -39,7 +39,7 @@ $shortcutPath = Join-Path $StartMenu "$ShortcutName.lnk"
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $AppExe
 $shortcut.WorkingDirectory = $InstallDir
-$shortcut.Description = "wslc Desktop - Windows 容器 CLI 图形前端"
+$shortcut.Description = "Wslc Desktop - Windows 容器 CLI 图形前端"
 $shortcut.Save()
 
 Write-Host ""
@@ -47,4 +47,4 @@ Write-Host "安装完成" -ForegroundColor Green
 Write-Host "  程序: $AppExe"
 Write-Host "  快捷方式: $shortcutPath"
 Write-Host ""
-Write-Host "现在可以从开始菜单点击 wslc Desktop 启动，或直接双击 exe。" -ForegroundColor Cyan
+Write-Host "现在可以从开始菜单点击 Wslc Desktop 启动，或直接双击 exe。" -ForegroundColor Cyan

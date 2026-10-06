@@ -423,7 +423,7 @@ let totalFailures = 0;
   const diag = env.win.__wslc && env.win.__wslc.diag ? env.win.__wslc.diag() : null;
   rep.check('window.__wslc.diag() 可用', !!diag);
   rep.check('后端模式 = unavailable', diag && diag.mode === 'unavailable', diag && diag.mode);
-  rep.check('期望方法数 = 35', diag && diag.expected && diag.expected.length === 35, diag && diag.expected && diag.expected.length);
+  rep.check('期望方法数 = 39', diag && diag.expected && diag.expected.length === 39, diag && diag.expected && diag.expected.length);
 
   const bannerText = env.textOf(env.byId.get('banner-root'));
   rep.check('显示「后端未就绪」横幅（不白屏）', /后端未就绪/.test(bannerText));
@@ -431,13 +431,13 @@ let totalFailures = 0;
   rep.check('后端 pill 标记为未就绪', /未就绪/.test(env.byId.get('backend-pill').textContent));
   rep.check('容器视图渲染错误态而非空白', /加载失败/.test(env.textOf(env.byId.get('ct-body'))));
 
-  for (const view of ['images', 'volumes', 'networks', 'env', 'tasks']) {
+  for (const view of ['images', 'sessions', 'volumes', 'networks', 'env', 'tasks']) {
     const tab = env.byId.get('tab-' + view);
     env.clickTab(view);
     await sleep(20);
     const selected = env.allElements.filter((e) => e._classes.includes('tab') && e.getAttribute('aria-selected') === 'true');
     rep.check(`点击 ${view} 后仅一个 tab 选中`, selected.length === 1 && selected[0] === tab);
-    const id = { images: 'img-body', volumes: 'vol-body', networks: 'net-body', tasks: 'task-body', env: 'env-content' }[view];
+    const id = { images: 'img-body', sessions: 'sess-body', volumes: 'vol-body', networks: 'net-body', tasks: 'task-body', env: 'env-content' }[view];
     const expect = view === 'env' ? /环境自检失败/ : /加载失败/;
     rep.check(`${view} 视图渲染错误态而非空白`, expect.test(env.textOf(env.byId.get(id))));
   }

@@ -4,7 +4,7 @@
 
 ## 项目一句话
 
-`wslc Desktop` 是用 **Go + Wails v2** 为微软 [wslc](https://learn.microsoft.com/en-us/windows/wsl/wsl-container) 写的 Windows 桌面管理工具，补齐 wslc 缺失的镜像源配置能力。前端是**零构建**的纯静态 HTML/CSS/JS。
+`Wslc Desktop` 是用 **Go + Wails v2** 为微软 [wslc](https://learn.microsoft.com/en-us/windows/wsl/wsl-container) 写的 Windows 桌面管理工具，补齐 wslc 缺失的镜像源配置能力。前端是**零构建**的纯静态 HTML/CSS/JS。
 
 ## 目录
 

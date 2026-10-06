@@ -3,10 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"io"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/wslc-desktop/wslc-desktop/internal/domain"
 	"github.com/wslc-desktop/wslc-desktop/internal/wslc"
@@ -106,12 +103,6 @@ func (s *Service) EnvCheck(ctx context.Context) (EnvStatus, error) {
 		status.Problems = append(status.Problems, "容器服务探测失败："+oneLine(err))
 	}
 
-	// Only worth probing when the container service is up: otherwise the user
-	// will fix the bigger problem first and never see the pull hint.
-	if status.ServiceReady {
-		status.PullTip = s.probePullReachability(ctx)
-	}
-
 	// Report the mirror currently in effect so the environment view and the
 	// settings view can never disagree about what is actually active.
 	status.ActiveMirror = s.activeMirror()
@@ -170,60 +161,6 @@ func (s *Service) sessions(ctx context.Context) ([]domain.Session, error) {
 func (s *Service) probeContainerService(ctx context.Context) error {
 	_, err := s.run(ctx, wslc.Spec{Kind: wslc.CmdContainerList, Args: []string{"container", "list", "--format", "json"}})
 	return err
-}
-
-// probePullReachability checks whether the machine can reach Docker Hub's
-// /v2/ endpoint without going through a proxy. A 401 is the expected answer
-// (it means the registry answered and only asked for a token); a timeout or
-// connection failure means the host cannot reach Docker Hub directly, which
-// is the common case in mainland China.
-//
-// The hint text is deliberately specific: it names the working mirror that
-// was verified against this machine, so the user can copy-paste it.
-//
-// The probe is bounded to 5s and never fails: a nil return just means
-// "no hint", not "docker hub works".
-func (s *Service) probePullReachability(ctx context.Context) string {
-	const dockerHub = "https://registry-1.docker.io/v2/"
-	const daocloud = "https://docker.m.daocloud.io/v2/"
-
-	// Try a real HTTP request first. Some networks block DNS but a direct
-	// IP still fails; both cases surface as a non-200/non-401.
-	reachable := func(u string) bool {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		if err != nil {
-			return false
-		}
-		client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-		resp, err := client.Do(req)
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
-		// 401 is a healthy registry answering its auth challenge.
-		return resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusOK
-	}
-
-	if reachable(dockerHub) {
-		return "" // Docker Hub is reachable, nothing to suggest.
-	}
-
-	// Docker Hub is not reachable. Check whether a well-known mirror is, so
-	// we can point the user at a name that is verified working rather than
-	// asking them to guess.
-	mirror := "docker.m.daocloud.io"
-	if !reachable(daocloud) {
-		mirror = "" // neither works; the user has a deeper network problem
-	}
-	if mirror == "" {
-		return "容器服务可用，但本机直连 Docker Hub 与常用镜像站均失败，请检查网络/代理。"
-	}
-
-	return "本机无法直连 Docker Hub（wslc 无 registry mirror 配置）。已验证可用的镜像：" +
-		mirror + "/library/alpine:3.20。" +
-		"完整镜像路径用法示例：wslc image pull " + mirror + "/library/alpine:3.20。" +
-		"上游议题：microsoft/WSL#40951。"
 }
 
 // oneLine flattens an error into a single readable line.

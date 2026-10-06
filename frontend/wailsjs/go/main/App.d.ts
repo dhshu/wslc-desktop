@@ -16,6 +16,10 @@ export function CreateVolume(arg1:string,arg2:string):Promise<string>;
 
 export function EnvCheck():Promise<service.EnvStatus>;
 
+export function ExportImage(arg1:string,arg2:string,arg3:boolean):Promise<string>;
+
+export function ImportImage(arg1:string):Promise<string>;
+
 export function InspectContainer(arg1:string):Promise<jsontext.Value>;
 
 export function InspectImage(arg1:string):Promise<jsontext.Value>;
@@ -27,6 +31,8 @@ export function ListContainers(arg1:service.ContainerFilter):Promise<Array<domai
 export function ListImages(arg1:boolean):Promise<Array<domain.Image>>;
 
 export function ListNetworks():Promise<Array<domain.Network>>;
+
+export function ListSessions():Promise<Array<domain.Session>>;
 
 export function ListTasks():Promise<Array<service.Task>>;
 
@@ -71,5 +77,7 @@ export function TagImage(arg1:string,arg2:string):Promise<string>;
 export function TerminalResize(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function TerminalWrite(arg1:string,arg2:string):Promise<void>;
+
+export function TerminateSession(arg1:number):Promise<string>;
 
 export function TestMirror(arg1:string):Promise<service.MirrorProbe>;

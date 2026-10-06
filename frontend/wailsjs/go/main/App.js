@@ -26,6 +26,14 @@ export function EnvCheck() {
   return window['go']['main']['App']['EnvCheck']();
 }
 
+export function ExportImage(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ExportImage'](arg1, arg2, arg3);
+}
+
+export function ImportImage(arg1) {
+  return window['go']['main']['App']['ImportImage'](arg1);
+}
+
 export function InspectContainer(arg1) {
   return window['go']['main']['App']['InspectContainer'](arg1);
 }
@@ -48,6 +56,10 @@ export function ListImages(arg1) {
 
 export function ListNetworks() {
   return window['go']['main']['App']['ListNetworks']();
+}
+
+export function ListSessions() {
+  return window['go']['main']['App']['ListSessions']();
 }
 
 export function ListTasks() {
@@ -136,6 +148,10 @@ export function TerminalResize(arg1, arg2, arg3) {
 
 export function TerminalWrite(arg1, arg2) {
   return window['go']['main']['App']['TerminalWrite'](arg1, arg2);
+}
+
+export function TerminateSession(arg1) {
+  return window['go']['main']['App']['TerminateSession'](arg1);
 }
 
 export function TestMirror(arg1) {

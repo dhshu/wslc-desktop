@@ -1,4 +1,4 @@
-/* wslc Desktop — 单页界面样式
+/* Wslc Desktop — 单页界面样式
  * 无外部字体 / 无 CDN，全部离线可用。
  * 深色为默认（[data-theme="dark"]），浅色为 [data-theme="light"]；
  * html 上的 data-theme 由 app.js 根据 localStorage / prefers-color-scheme 写入。

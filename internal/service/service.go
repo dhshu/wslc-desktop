@@ -97,20 +97,13 @@ type EnvStatus struct {
 	ServiceReady  bool             `json:"ServiceReady"`
 	Sessions      []domain.Session `json:"Sessions"`
 	Problems      []string         `json:"Problems"`
-	// PullTip is a non-fatal hint shown when the machine can reach the
-	// container service but not Docker Hub directly. WSLC has no registry
-	// mirror configuration (see microsoft/WSL#40951), so the only practical
-	// workaround is to pull from a mirror by its full image path, e.g.
-	// docker.m.daocloud.io/library/alpine:3.20. An empty value means the
-	// frontend should not show any banner.
-	PullTip  string    `json:"PullTip"`
 	// ActiveMirror is the registry endpoint the app will rewrite Docker Hub
 	// pulls through ("" when mirroring is disabled). Shown on the settings
 	// view so the user can see what is actually taking effect.
 	ActiveMirror string `json:"ActiveMirror"`
 	// SettingsPath is where the app reads and writes its own settings JSON.
-	SettingsPath string `json:"SettingsPath"`
-	CheckedAt time.Time `json:"CheckedAt"`
+	SettingsPath string    `json:"SettingsPath"`
+	CheckedAt    time.Time `json:"CheckedAt"`
 }
 
 // ContainerFilter narrows ListContainers. Query/State/Limit are applied in the

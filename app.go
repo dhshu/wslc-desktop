@@ -121,7 +121,7 @@ func (a *App) shutdown(context.Context) {
 func (a *App) checkEnv() {
 	status, err := a.svc.EnvCheck(a.callContext())
 	if err != nil {
-		log.Printf("wslc Desktop: 环境自检失败: %v", err)
+		log.Printf("Wslc Desktop: 环境自检失败: %v", err)
 		// Keep the snapshot useful: a hard failure is still a problem the user
 		// must see in the environment view.
 		status.Problems = append(append([]string(nil), status.Problems...), err.Error())
@@ -284,6 +284,35 @@ func (a *App) TagImage(source string, target string) (string, error) {
 // InspectImage returns the raw wslc inspect JSON for an image.
 func (a *App) InspectImage(ref string) (json.RawMessage, error) {
 	return a.svc.InspectImage(a.callContext(), ref)
+}
+
+// ExportImage saves an image to a tar file at dstPath (wslc image save -o).
+// It refuses to overwrite an existing file unless overwrite is true.
+func (a *App) ExportImage(ref, dstPath string, overwrite bool) (string, error) {
+	return a.svc.ExportImage(a.callContext(), ref, dstPath, overwrite)
+}
+
+// ImportImage loads an image from a tar file at srcPath (wslc image load -i).
+func (a *App) ImportImage(srcPath string) (string, error) {
+	return a.svc.ImportImage(a.callContext(), srcPath)
+}
+
+// ---------------------------------------------------------------------------
+// 会话
+// ---------------------------------------------------------------------------
+
+// ListSessions lists the wslc sessions the client is attached to. It reads
+// `wslc system session list`, which unlike other list commands rejects
+// --format, so the table parser is always the path taken.
+func (a *App) ListSessions() ([]domain.Session, error) {
+	return a.svc.ListSessions(a.callContext())
+}
+
+// TerminateSession terminates the wslc session with the given id. A session
+// id of 0 (or a negative value) means "terminate the default session"; any
+// other id is resolved to its display name through ListSessions first.
+func (a *App) TerminateSession(sessionID int) (string, error) {
+	return a.svc.TerminateSession(a.callContext(), sessionID)
 }
 
 // ---------------------------------------------------------------------------

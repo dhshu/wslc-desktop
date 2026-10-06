@@ -271,7 +271,6 @@ export namespace service {
 	    ServiceReady: boolean;
 	    Sessions: domain.Session[];
 	    Problems: string[];
-	    PullTip: string;
 	    ActiveMirror: string;
 	    SettingsPath: string;
 	    // Go type: time
@@ -292,7 +291,6 @@ export namespace service {
 	        this.ServiceReady = source["ServiceReady"];
 	        this.Sessions = this.convertValues(source["Sessions"], domain.Session);
 	        this.Problems = source["Problems"];
-	        this.PullTip = source["PullTip"];
 	        this.ActiveMirror = source["ActiveMirror"];
 	        this.SettingsPath = source["SettingsPath"];
 	        this.CheckedAt = this.convertValues(source["CheckedAt"], null);

@@ -31,13 +31,13 @@ var frontendAssets embed.FS
 func main() {
 	assets, err := fs.Sub(frontendAssets, "frontend")
 	if err != nil {
-		log.Fatalf("wslc Desktop: 无法挂载内嵌前端资源: %v", err)
+		log.Fatalf("Wslc Desktop: 无法挂载内嵌前端资源: %v", err)
 	}
 
 	app := NewApp(newRunner())
 
 	err = wails.Run(&options.App{
-		Title:            "wslc Desktop",
+		Title:            "Wslc Desktop",
 		Width:            940, // 默认窗口较原 850×540 整体放大 10%
 		Height:           600,
 		MinWidth:         640, // 保持与默认尺寸同比例，仍允许拉大到全屏
@@ -54,7 +54,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Fatalf("wslc Desktop: wails.Run 失败: %v", err)
+		log.Fatalf("Wslc Desktop: wails.Run 失败: %v", err)
 	}
 }
 
@@ -68,7 +68,7 @@ func main() {
 func newRunner() wslc.Runner {
 	exe, err := wslc.NewResolver().Resolve()
 	if err != nil {
-		log.Printf("wslc Desktop: 未找到 wslc.exe（界面仍会启动，由“环境自检”报告）: %v", err)
+		log.Printf("Wslc Desktop: 未找到 wslc.exe（界面仍会启动，由“环境自检”报告）: %v", err)
 	}
 	return wslc.NewExecRunner(exe)
 }
