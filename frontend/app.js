@@ -4105,6 +4105,21 @@
     initTheme();
     bindShell();
 
+    /* 防御性初始化：在任何异步操作之前，先把所有视图和面板隐藏，
+       只保留默认视图 containers。这能防止 WebView2 用缓存旧版
+       HTML（其中部分 section 没有 hidden 属性）时出现多个面板
+       同时可见的情况。selectView 之后会重新设置正确的可见性。 */
+    VIEWS.forEach(function (v) {
+      var sec = $('view-' + v);
+      if (sec) sec.hidden = (v !== 'containers');
+    });
+    Object.keys(GROUPS).forEach(function (v) {
+      GROUPS[v].forEach(function (panel) {
+        var el = panelEl(panel);
+        if (el) el.hidden = !(v === 'containers' && panel === 'containers');
+      });
+    });
+
     var mod = await loadBackend();
     if (mod) backend.mode = 'wails';
     else if (goApp()) backend.mode = 'fallback';
