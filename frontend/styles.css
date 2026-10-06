@@ -403,14 +403,15 @@ input[type="search"].input { min-width: 190px; }
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
 }
-/* 子面板（分组内的 tab 内容）：占据分组内的剩余高度并可滚动。
-   不声明 display，继承 section 的 block 上下文 —— 否则 flex 布局
-   会让内联 <span> 变成匿名 flex item，导致"会话 3（合计 0 B）"
-   之类的状态文本被拆成两行。 */
+/* 子面板（分组内的 tab 内容）：和 .view 一样是纵向 flex 容器。
+   参照设置面板的做法 —— 工具条 flex:0 0 auto 钉在顶部，表格区
+   flex:1 1 auto 填满剩余高度并滚动。之前没声明 display:flex，
+   导致子元素的 flex 属性全部失效，表格不上不下、留出大块空白。 */
 .panel.view-panel {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  display: flex; flex-direction: column;
+  overflow: hidden;
   background: var(--bg);
   border-bottom: none;
 }
@@ -454,11 +455,8 @@ input[type="search"].input { min-width: 190px; }
 .form-error[hidden] { display: none; }
 
 /* ============================ 表格 ============================ */
-/* .table-wrap 本身不做 flex:1 填充 —— 在子面板（.view-panel）内部，
-   面板是 block 布局，flex:1 不生效；表格应该紧贴上方工具条，而不是
-   被 flex 撑到面板底部再留空白。滚动由外层 .view-panel 提供。 */
 .table-wrap {
-  flex: 0 0 auto;
+  flex: 1 1 auto; min-height: 0;
   overflow: auto;                 /* 横向 + 纵向滚动 */
   background: var(--bg);
 }
