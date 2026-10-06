@@ -397,6 +397,15 @@ input[type="search"].input { min-width: 190px; }
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
 }
+/* 子面板（分组内的 tab 内容）：占满可用空间并可滚动 */
+.panel.view-panel {
+  flex: 1 1 auto;
+  display: flex; flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+  border-bottom: none;
+}
 .panel > summary {
   cursor: pointer; padding: 6px 10px; font-size: var(--fs-sm);
   color: var(--text-dim); user-select: none;

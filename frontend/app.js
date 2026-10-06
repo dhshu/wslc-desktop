@@ -3419,11 +3419,17 @@
 
   async function openTaskOutput(taskId, title, channels) {
     var aliases = [taskId];
+    /* 从后端返回的 Task.Output 里回填历史：某些任务（如事件流、环境自检）
+       不走 wslc:output 事件通道，或者事件在打开抽屉之前到达，前端 store
+       里没有它们的输出 —— 这时 Output 字段是唯一能拿到内容的方式。 */
+    var t = (state.tasks || []).find(function (x) { return String(x.ID) === String(taskId); });
+    var hist = (t && typeof t.Output === 'string' && t.Output.length) ? t.Output.split('\n') : [];
+    var live = logLinesFor(aliases, channels || [CH.task, CH.build, CH.pull]);
     openLogsDrawer({
       title: title || ('任务输出 · ' + shortId(taskId, 12)),
       refAliases: aliases,
       channels: channels || [CH.task, CH.build, CH.pull],
-      lines: logLinesFor(aliases, channels || [CH.task, CH.build, CH.pull]),
+      lines: hist.concat(live),
       hint: '（暂无输出；任务开始输出后会实时显示）',
       meta: '任务 ' + shortId(taskId, 12)
     });
