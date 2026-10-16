@@ -115,7 +115,7 @@ scope 常见取值：`wslc` / `service` / `settings` / `binding` / `terminal` / 
 - 不要在 `internal/wslc` 里 import 业务模型（`internal/domain` 或 `internal/service`）。
 - 不要绕过二次确认框去"简化"破坏性操作。
 - 不要为了解决 wslc 缺陷去修改 wslc 二进制，或假设 wslc 未来会支持某个功能后就删除现有绕过逻辑。
-- 不要提交 `%APPDATA%\wslc-desktop-settings.json` 或任何用户本地设置。
+- 不要提交 `%APPDATA%\wslc-desktop-settings.json`、exe 同目录下的设置文件/`userdata\` 或任何用户本地设置。
 
 ## 遇到不确定的情况
 

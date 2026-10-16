@@ -30,8 +30,9 @@ import (
 //      `-e`, because wslc passes container env vars through but does not accept
 //      a proxy setting of its own.
 //
-// The file lives next to the user's wslc settings so the two are easy to find
-// together, and it never modifies wslc's own file.
+// The file lives next to the executable in portable mode (a copied folder
+// carries its settings) and under %APPDATA% otherwise; see portable.go for the
+// resolution rules. It never modifies wslc's own settings file.
 const settingsFileBaseName = "wslc-desktop-settings.json"
 
 // settingsSchemaVersion guards forward-compatible reads.
@@ -75,8 +76,8 @@ func (s *Settings) defaults() AppSettings {
 // store.
 func defaultSettings() AppSettings {
 	return AppSettings{
-		SchemaVersion:  settingsSchemaVersion,
-		MirrorEnabled:  true,
+		SchemaVersion: settingsSchemaVersion,
+		MirrorEnabled: true,
 		// The fastest verified endpoint from a mainland-China connection.
 		// docker.io is listed first in DefaultMirrors for clarity but is not the
 		// default because it times out without a proxy.
@@ -88,9 +89,20 @@ func defaultSettings() AppSettings {
 
 // settingsPath resolves the JSON location, honouring WSLC_DESKTOP_SETTINGS for
 // tests.
+//
+// Resolution order:
+//
+//  1. WSLC_DESKTOP_SETTINGS — explicit override (tests, advanced users);
+//  2. portable — the executable's own directory, when it already holds this
+//     app's data or is writable (see PortableDataDir);
+//  3. %APPDATA% — the per-user location for a regular install;
+//  4. ~/.wslc-desktop — non-Windows fallback.
 func settingsPath(env map[string]string) (string, error) {
 	if v := strings.TrimSpace(env["WSLC_DESKTOP_SETTINGS"]); v != "" {
 		return v, nil
+	}
+	if dir, ok := PortableDataDir(); ok {
+		return filepath.Join(dir, settingsFileName()), nil
 	}
 	if base := strings.TrimSpace(env["APPDATA"]); base != "" {
 		return filepath.Join(base, settingsFileName()), nil

@@ -38,6 +38,8 @@ node_modules/
 *.local
 wslc-desktop-settings.json
 .wslc-desktop/
+userdata/
+.wslc-desktop-probe-*
 *.bak
 *.tmp
 

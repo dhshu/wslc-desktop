@@ -49,7 +49,7 @@ cd wslc-desktop
 wails build -s
 ```
 
-产物：`build\bin\wslc-desktop.exe`（约 12 MB）。可运行 `install.ps1` 安装到标准程序目录并创建开始菜单快捷方式，避免 SmartScreen 拦截。
+产物：`build\bin\wslc-desktop.exe`（约 12 MB）。
 
 ## 测试
 

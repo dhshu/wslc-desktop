@@ -13,11 +13,14 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
+	"github.com/wslc-desktop/wslc-desktop/internal/service"
 	"github.com/wslc-desktop/wslc-desktop/internal/wslc"
 )
 
@@ -52,10 +55,28 @@ func main() {
 		Bind: []interface{}{
 			app,
 		},
+		Windows: windowsOptions(),
 	})
 	if err != nil {
 		log.Fatalf("Wslc Desktop: wails.Run 失败: %v", err)
 	}
+}
+
+// windowsOptions pins WebView2's user data folder — localStorage (the theme
+// preference wslc.theme lives there), cookies, IndexedDB, cache — next to the
+// executable in portable mode, mirroring where the settings JSON goes (see
+// internal/service/portable.go).
+//
+// In a non-portable install the field stays empty on purpose: Wails forwards
+// it verbatim to CreateCoreWebView2EnvironmentWithOptions, and an unwritable
+// path makes environment creation fail fatally (message box + non-zero exit),
+// whereas the empty default (%APPDATA%\<exe name>) always works.
+func windowsOptions() *windows.Options {
+	opts := &windows.Options{}
+	if dir, ok := service.PortableDataDir(); ok {
+		opts.WebviewUserDataPath = filepath.Join(dir, service.WebView2UserDataDirName)
+	}
+	return opts
 }
 
 // newRunner resolves wslc.exe and returns a runner bound to it.
