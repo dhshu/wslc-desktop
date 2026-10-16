@@ -86,7 +86,9 @@ wails build -s            # -s 因为本项目没有前端构建步骤
 - 它由 [go-winres](https://github.com/tc-hib/go-winres) 从 `build/appicon.png` 生成，让**普通 `go build`**（IDE 运行配置、`wails dev`）也能嵌入任务栏图标和 manifest——Wails CLI 只在 `wails build` 时临时生成同名 syso 并在编译后删除。
 - Go 链接器**只允许一个 `.rsrc` 段**：任何其他 `.syso`（含 GOOS/GOARCH 后缀名）都会导致 `wails build` 报 `too many .rsrc sections`，所以文件名必须与 Wails 临时文件完全一致。
 - `wails build` 会覆盖并在结束时**删除**该文件；构建后执行 `git restore wslc-desktop-res.syso`（或重新生成）恢复，不要因此把它从版本控制里移除。
-- 重新生成：`go-winres simply --icon build/appicon.png --manifest gui --arch amd64 --product-name "Wslc Desktop" --file-description "Wslc Desktop" --copyright "Copyright (c) 2025 wslc-desktop" --product-version 0.0.1 --file-version 0.0.1`，然后把 `rsrc_windows_amd64.syso` 重命名为 `wslc-desktop-res.syso`。
+- 重新生成：`go-winres make --arch amd64`（读取 `winres/winres.json`），然后把 `rsrc_windows_amd64.syso` 重命名为 `wslc-desktop-res.syso`。
+- **图标必须在资源 ID 3 上**：Wails 运行时用 `LoadIcon(…, MAKEINTRESOURCE(3))` 加载窗口/标题栏图标（`winc.AppIconID = 3`），所以 `winres/winres.json` 里 `RT_GROUP_ICON` 的资源名必须是 `#3`。`go-winres simply` 默认放在 ID 1，会导致资源管理器里 exe 图标正常但窗口标题栏显示默认图标——不要改回 `simply`。
+- `build/appicon.png` 需 ≤ 256×256（go-winres 限制），源图过大时先缩放。
 
 ## 提交信息
 
