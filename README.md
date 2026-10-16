@@ -21,12 +21,14 @@
 
 ## 系统要求
 
-| 组件 | 最低要求 |
-| --- | --- |
-| Windows | 11（含 WebView2 Runtime） |
-| WSL | ≥ 2.9.3（提供 `wslc.exe`） |
-| Go（构建） | ≥ 1.25 |
-| Wails CLI（构建） | v2.16.0 |
+| 组件 | 最低要求 | 已验证版本 |
+| --- | --- | --- |
+| Windows | 11（含 WebView2 Runtime） | — |
+| WSL | ≥ 2.9.3（提供 `wslc.exe`） | **3.0.3.0**（2026-10-09 发布） |
+| Go（构建） | ≥ 1.25 | 1.25.x |
+| Wails CLI（构建） | v2.16.0 | v2.16.0 |
+
+> **适配版本说明**：本项目针对 `wslc` 3.0.1 实测开发，并已逐项核对 **wslc 3.0.3.0**（随 WSL 3.0.3 分发）的全部命令行契约——容器 / 镜像 / 卷 / 网络 / 会话 / 诊断各子命令使用的 flag（`--format`、`--all`、`--time`、`--timeout`、`--signal`、`--force`、`--volumes`、`--follow`、`--tail`、`--timestamps`、`--since`、`--until`、`--interactive`、`--tty`、`--user`、`--workdir`、`--env`、`--driver`、`--subnet`、`--gateway`、`--internal`、`--file`、`--tag`、`--build-arg`、`--target`、`--no-cache`、`--pull`、`--label`、`--progress` 等）在 3.0.3 中均无变更，表头本地化与 JSON/NDJSON 输出格式兼容，无需改动即可使用。后续 wslc 新版本若破坏性变更命令行契约，请提 issue。
 
 **运行前提：容器服务必须可用。** wslc 通过 HCS 创建会话 VM，必须让 `vmcompute` 服务处于运行状态，否则容器命令会报 `HCS_E_SERVICE_NOT_AVAILABLE`：
 
