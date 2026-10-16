@@ -82,9 +82,11 @@
       </span>
     </div>
 
+    <!-- 表格可访问名称用 aria-label 而非 <caption class="visually-hidden">：
+         caption 在 .table-responsive 内会残留 1px 盒子（浏览器不支持 caption 绝对定位），
+         让每张表右侧多出一条竖向滚动条 -->
     <div class="table-responsive">
-      <table id="ct-table" class="table table-sm table-hover align-middle mb-0">
-        <caption class="visually-hidden">容器列表</caption>
+      <table id="ct-table" class="table table-sm table-hover align-middle mb-0" aria-label="容器列表">
         <thead>
           <tr>
             <th scope="col">名称</th>
@@ -156,8 +158,7 @@
     </details>
 
     <div class="table-responsive">
-      <table id="img-table" class="table table-sm table-hover align-middle mb-0">
-        <caption class="visually-hidden">镜像列表</caption>
+      <table id="img-table" class="table table-sm table-hover align-middle mb-0" aria-label="镜像列表">
         <thead>
           <tr>
             <th scope="col">仓库:标签</th>
@@ -199,8 +200,7 @@
         </span>
       </div>
       <div class="table-responsive">
-        <table id="sess-table" class="table table-sm table-hover align-middle mb-0">
-          <caption class="visually-hidden">会话列表</caption>
+        <table id="sess-table" class="table table-sm table-hover align-middle mb-0" aria-label="会话列表">
           <thead>
             <tr><th scope="col">ID</th><th scope="col">名称</th><th scope="col">创建者 PID</th><th scope="col">操作</th></tr>
           </thead>
@@ -222,8 +222,7 @@
         </span>
       </div>
       <div class="table-responsive">
-        <table id="stor-table" class="table table-sm table-hover align-middle mb-0">
-          <caption class="visually-hidden">会话磁盘存储</caption>
+        <table id="stor-table" class="table table-sm table-hover align-middle mb-0" aria-label="会话磁盘存储">
           <thead>
             <tr><th scope="col">会话</th><th scope="col">磁盘占用</th><th scope="col">文件</th><th scope="col">会话 VM</th><th scope="col">操作</th></tr>
           </thead>
@@ -261,8 +260,7 @@
         </span>
       </form>
       <div class="table-responsive">
-        <table id="vol-table" class="table table-sm table-hover align-middle mb-0">
-          <caption class="visually-hidden">卷列表</caption>
+        <table id="vol-table" class="table table-sm table-hover align-middle mb-0" aria-label="卷列表">
           <thead>
             <tr><th scope="col">名称</th><th scope="col">驱动</th><th scope="col">范围</th><th scope="col">挂载点</th><th scope="col">创建时间</th><th scope="col">操作</th></tr>
           </thead>
@@ -290,8 +288,7 @@
         </span>
       </form>
       <div class="table-responsive">
-        <table id="net-table" class="table table-sm table-hover align-middle mb-0">
-          <caption class="visually-hidden">网络列表</caption>
+        <table id="net-table" class="table table-sm table-hover align-middle mb-0" aria-label="网络列表">
           <thead>
             <tr><th scope="col">名称</th><th scope="col">ID</th><th scope="col">驱动</th><th scope="col">范围</th><th scope="col">创建时间</th><th scope="col">操作</th></tr>
           </thead>
@@ -351,8 +348,7 @@
       </span>
     </div>
     <div class="table-responsive">
-      <table id="task-table" class="table table-sm table-hover align-middle mb-0">
-        <caption class="visually-hidden">后台任务列表</caption>
+      <table id="task-table" class="table table-sm table-hover align-middle mb-0" aria-label="后台任务列表">
         <thead>
           <tr><th scope="col">任务 ID</th><th scope="col">类型</th><th scope="col">引用</th><th scope="col">状态</th><th scope="col">开始</th><th scope="col">结束</th><th scope="col">操作</th></tr>
         </thead>
