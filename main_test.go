@@ -31,7 +31,9 @@ func TestEmbeddedFrontendHasEntryPoints(t *testing.T) {
 
 	for _, name := range []string{
 		"index.html",
-		"styles.css",
+		"bootstrap.min.css",
+		"bootstrap-icons.css",
+		"fonts/bootstrap-icons.woff2",
 		"app.js",
 		"wailsjs/runtime/runtime.js",
 		"wailsjs/go/main/App.js",

@@ -4,6 +4,10 @@
  * 零构建步骤：本文件是 classic script（没有静态 import / export），
  * 这样既能通过 `node --check`，也能在 file:// 下直接解析。
  *
+ * 本版采用 Bootstrap 5（本地 bootstrap.min.css / bootstrap.bundle.min.js）呈现，
+ * 无任何自定义样式文件。所有可点击/可绑定的功能元素一律用 id 作为钩子，
+ * 视觉呈现全部走 Bootstrap 工具类与组件类。
+ *
  * 后端调用链（按优先级）：
  *   1) 动态 import('wailsjs/go/main/App.js')  ← wails dev/build 生成的 ESM 包装
  *   2) window.go.main.App[Method]             ← Wails 运行时注入的 Go 绑定
@@ -53,8 +57,7 @@
 
   /* 合并标签页后的二级视图。每个顶级视图（VIEWS）对应一个 view- 分组，
      分组内可能包含多个面板：单面板分组直接复用同名面板，双面板分组用
-     sub-view 切换显隐。数据加载、渲染与缓存仍按面板键进行，因此把
-     sessions/storage 放进同一个标签页不会互相覆盖状态。 */
+     sub-view 切换显隐。数据加载、渲染与缓存仍按面板键进行。 */
   var GROUPS = {
     containers: ['containers'],
     images: ['images'],
@@ -70,7 +73,6 @@
   });
   /* 顶级视图 -> 面板顺序；子视图选择状态（仅对多面板分组生效） */
   var SUB = { sessions: 'sessions', resources: 'volumes', diagnostics: 'env' };
-  /* 面板键 -> 显示名（含已合并的面板） */
   var PANEL_LABELS = {
     containers: '容器', images: '镜像', sessions: '会话', storage: '存储',
     volumes: '卷', networks: '网络', env: '环境自检', settings: '设置', tasks: '任务'
@@ -82,22 +84,19 @@
 
   /* ========================== 1. DOM 工具 ========================== */
 
-  /* 取一个 DOM id 对应的元素。因为 index.html 里为了 selfcheck 保留了一些
-     `<span id="xxx" hidden></span>` 占位符（真实元素由 JS 动态创建），
-     这里优先返回**非 hidden** 的匹配；否则回落到隐藏占位符。
-     这样 renderSettings 创建真实的 input/select 后，$('set-custom-mirrors')
-     会返回真正的 input，而不是被 index.html 里的空 span 抢走。 */
+  /* 取一个 DOM id 对应的元素。因为 index.html 里部分元素（运行容器弹窗内的
+     select / 设置页内的 input）由 JS 动态创建，这里优先返回**非 hidden** 的匹配；
+     否则回落到隐藏占位符。这样动态创建真实元素后，$('id') 会返回真正的元素。 */
   function $(id) {
     var all = document.querySelectorAll('[id="' + id + '"]');
     if (!all || all.length === 0) return null;
     for (var i = 0; i < all.length; i++) {
       var el = all[i];
-      /* 用 el.hidden（属性/属性布尔）或 style.display:none 判断 */
       if (!el.hasAttribute('hidden') && el.style && el.style.display !== 'none') {
         return el;
       }
     }
-    return all[0];   /* 都隐藏时返回第一个（至少不返回 undefined） */
+    return all[0];
   }
 
   function appendChildren(node, children) {
@@ -140,6 +139,47 @@
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
   function setChildren(node, children) { clear(node); appendChildren(node, children); }
 
+  /* 通用按钮：默认 btn-outline-secondary。输出与手写 h('button', …) 完全一致。
+     opts: { variant, extraClass, icon(<i>节点), iconGap, id, title, ariaLabel,
+            disabled, dataset, onclick, attrs } */
+  function btn(label, opts) {
+    opts = opts || {};
+    var size = (opts.small === false) ? '' : ' btn-sm';
+    var cls = 'btn' + size + ' ' + (opts.variant || 'btn-outline-secondary');
+    if (opts.extraClass) cls += ' ' + opts.extraClass;
+    var props = { class: cls, type: 'button' };
+    if (opts.id) props.id = opts.id;
+    if (opts.title) props.title = opts.title;
+    if (opts.ariaLabel) props['aria-label'] = opts.ariaLabel;
+    if (opts.disabled) props.disabled = opts.disabled;
+    if (opts.dataset) props.dataset = opts.dataset;
+    if (opts.onclick) props.onclick = opts.onclick;
+    if (opts.attrs) { for (var ak in opts.attrs) { if (Object.prototype.hasOwnProperty.call(opts.attrs, ak)) props[ak] = opts.attrs[ak]; } }
+    var content = label;
+    if (opts.icon) content = [opts.icon, (opts.iconGap === false ? '' : ' '), label];
+    return h('button', props, content);
+  }
+
+  /* 表格单元格：展示文本，空值回退为「—」。输出与手写 h('td', …) 完全一致。
+     value 为空(null/undefined/''/false)时显示 empty(默认「—」)并留空 title；
+     否则显示 value，title 默认取 String(value)，可用 opts.title 覆盖。 */
+  function cell(value, opts) {
+    opts = opts || {};
+    var cls = (opts.cls === undefined) ? 'font-monospace small' : opts.cls;
+    var empty = (opts.empty !== undefined) ? opts.empty : '—';
+    var hasValue = !(value === null || value === undefined || value === '' || value === false);
+    var props = { class: cls };
+    props.text = hasValue ? value : empty;
+    props.title = (opts.title !== undefined) ? opts.title : (hasValue ? String(value) : '');
+    return h('td', props);
+  }
+
+  /* 填充容器：等价于 setChildren($(id), children)，输出一致 */
+  function mount(id, children) {
+    var el = $(id);
+    if (el) setChildren(el, children);
+  }
+
   function fmtTime(v) {
     if (v === null || v === undefined || v === '') return '';
     var d = (v instanceof Date) ? v : new Date(v);
@@ -150,6 +190,16 @@
     if (d.toDateString() === now.toDateString()) return t;
     var y = d.getFullYear() === now.getFullYear() ? '' : d.getFullYear() + '-';
     return y + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + t;
+  }
+
+  /* 始终带 年-月-日 的完整时间，用于状态栏「更新于」等需要明确日期的场景 */
+  function fmtDateTime(v) {
+    if (v === null || v === undefined || v === '') return '';
+    var d = (v instanceof Date) ? v : new Date(v);
+    if (isNaN(d.getTime()) || d.getFullYear() < 1970) return '';
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+           p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
   }
 
   function shortId(id, n) {
@@ -259,13 +309,16 @@
     return status ? 'other' : '';
   }
 
-  function stateClass(st) {
-    if (st === 'running' || st === 'succeeded') return 'running';
-    if (st === 'exited' || st === 'canceled' || st === 'cancelled') return 'exited';
-    if (st === 'created') return 'created';
-    if (st === 'failed' || st === 'dead') return 'error';
-    if (st === 'paused') return 'created';
-    return 'exited';
+  /* 状态 -> Bootstrap 配色（badge / dot 共用） */
+  function stateColor(st) {
+    if (st === 'running' || st === 'succeeded') return 'success';
+    if (st === 'exited' || st === 'canceled' || st === 'cancelled') return 'secondary';
+    if (st === 'created' || st === 'paused') return 'warning';
+    if (st === 'error' || st === 'dead') return 'danger';
+    return 'light';
+  }
+  function stateBadgeClass(st) {
+    return 'badge rounded-pill text-bg-' + stateColor(st);
   }
 
   /* ========================== 2. 状态 ========================== */
@@ -290,9 +343,9 @@
     logs: null,
     term: null,
     settings: null,
-    settingsProbe: {},   /* endpoint -> {ok,ms,msg} 或 {busy:true} */
+    settingsProbe: {},
     errors: [],
-    store: {},          /* key = "channel|ref" -> {lines:[], lastSeq:int} */
+    store: {},
     autoRefresh: { env: 0, tasks: 0 },
     banners: { backend: null, env: null }
   };
@@ -304,12 +357,9 @@
     probed: false,
     promise: null,
     missing: [],
-    mode: 'probing'    /* probing | wails | fallback | unavailable */
+    mode: 'probing'
   };
 
-  /* 真实 Wails 运行时才算“有运行时”；兜底 shim（__wslcShim）不算，
-     否则会静默收不到任何事件。取消订阅统一用 EventsOff(name)：
-     v2.16.0 的 runtime.d.ts 把 EventsOn 声明为 void，不依赖其返回值。 */
   function rt() {
     var r = (typeof window !== 'undefined') ? window.runtime : null;
     if (!r || r.__wslcShim) return null;
@@ -327,7 +377,6 @@
     backend.promise = (async function () {
       if (backend.probed) return backend.module;
       try {
-        /* 动态 import：Wails 生成的 App.js 是 ESM；此处失败不会中断脚本。 */
         var mod = await import('./wailsjs/go/main/App.js');
         backend.module = mod;
       } catch (e) {
@@ -353,7 +402,6 @@
     return await fn.apply(thisArg, args);
   }
 
-  /* 记录启动时发现的缺失绑定，用于横幅诊断。 */
   function probeBindings(mod) {
     var present = null;
     if (mod) present = Object.keys(mod);
@@ -373,7 +421,6 @@
     var info = normalizeError(err);
     var newest = state.errors[0];
     if (newest && newest.context === context && newest.message === info.message) {
-      /* 同一错误反复出现（例如 2s 轮询）：只刷新时间，不刷屏。 */
       newest.time = new Date();
       newest.count = (newest.count || 1) + 1;
     } else {
@@ -384,27 +431,38 @@
     }
     if (state.errors.length > MAX_ERRORS) state.errors.length = MAX_ERRORS;
     var btn = $('status-err');
-    if (btn) { btn.hidden = false; btn.textContent = '⚠ 错误 ' + state.errors.length; }
+    if (btn) {
+      btn.hidden = false;
+      setChildren(btn, [
+        h('i', { class: 'bi bi-exclamation-triangle', 'aria-hidden': 'true' }),
+        ' 错误 ' + state.errors.length
+      ]);
+    }
     return info;
   }
 
   function toast(kind, message, detail) {
     var root = $('toast-root');
     if (!root) return function () {};
+    var variant = kind === 'error' ? 'danger' : kind === 'warn' ? 'warning' : kind === 'success' ? 'success' : 'info';
+    var iconClass = kind === 'error' ? 'bi-x-octagon-fill text-danger'
+      : kind === 'warn' ? 'bi-exclamation-triangle-fill text-warning'
+      : kind === 'success' ? 'bi-check-circle-fill text-success'
+      : 'bi-info-circle-fill text-info';
     var el = h('div', {
-      class: 'toast toast-' + kind,
+      class: 'alert alert-' + variant + ' alert-dismissible d-flex align-items-center gap-2 py-2 px-3 mb-2 fade show',
       role: kind === 'error' ? 'alert' : 'status',
       'aria-live': kind === 'error' ? 'assertive' : 'polite'
-    });
-    var icon = kind === 'error' ? '⛔' : kind === 'warn' ? '⚠' : kind === 'success' ? '✓' : 'ℹ';
-    var msg = h('div', { class: 'toast-msg' }, h('span', { class: 'toast-icon', text: icon + ' ' }), String(message));
-    if (detail) msg.appendChild(h('span', { class: 'toast-detail', text: String(detail) }));
-    var close = h('button', {
-      class: 'toast-close', type: 'button', title: '关闭通知', 'aria-label': '关闭通知',
-      text: '✕', onclick: function () { dismiss(); }
-    });
-    el.appendChild(msg);
-    el.appendChild(close);
+    },
+      h('span', { 'aria-hidden': 'true' }, h('i', { class: 'bi ' + iconClass })),
+      h('div', { class: 'small' }, String(message), detail ? h('div', { class: 'text-secondary', text: String(detail) }) : null),
+      h('button', {
+        type: 'button', class: 'btn-close btn-close-white' + (variant === 'warning' || variant === 'info' ? '' : ''),
+        'data-bs-dismiss': 'alert', 'aria-label': '关闭通知',
+        onclick: function () { dismiss(); }
+      })
+    );
+    if (variant === 'warning' || variant === 'info') el.querySelector('.btn-close').classList.remove('btn-close-white');
     root.appendChild(el);
 
     var ttl = kind === 'error' ? 12000 : (kind === 'warn' ? 9000 : 5000);
@@ -419,8 +477,6 @@
     return dismiss;
   }
 
-  /* 同一 (context, message) 在窗口内只弹一次 toast，避免轮询导致刷屏。
-     错误本身始终记录到状态栏错误列表（不静默吞掉）。 */
   var toastGate = { context: '', message: '', at: 0 };
   function fail(context, err, opts) {
     var info = recordError(context, err);
@@ -443,25 +499,16 @@
 
   function touchLast() {
     var el = $('status-last');
-    if (el) el.textContent = '更新于 ' + fmtTime(new Date());
+    if (el) el.textContent = '更新于 ' + fmtDateTime(new Date());
   }
 
-  /* 设置页的「未保存」指示。状态在表单变化时点亮，在保存/重载后清除。 */
   function markSettingsDirty(dirty) {
     var pill = $('settings-dirty');
     if (!pill) return;
-    if (dirty) {
-      pill.hidden = false;
-      pill.className = 'status-pill busy';
-    } else {
-      pill.hidden = true;
-      pill.className = 'status-pill off';
-    }
+    pill.hidden = !dirty;
   }
   function markSettingsClean() { markSettingsDirty(false); }
 
-  /* 表单任何字段变化都会点亮「未保存」指示。用 input 事件一次监听，
-     在设置容器上做事件委托，避免逐个 input 绑定。 */
   function watchSettingsDirty() {
     var root = $('settings-content');
     if (!root) return;
@@ -475,36 +522,32 @@
 
   /* ========================== 5. 横幅 ========================== */
 
-  function renderBanners() {
-    var root = $('banner-root');
-    if (!root) return;
-    var nodes = [];
+  function bannerNode(kind, title, lines, extra) {
+    var variant = kind === 'error' ? 'danger' : kind === 'warn' ? 'warning' : kind === 'info' ? 'info' : 'secondary';
+    var iconClass = kind === 'error' ? 'bi-x-octagon-fill text-danger' : 'bi-exclamation-triangle-fill text-warning';
+    return h('div', { class: 'alert alert-' + variant + ' d-flex gap-2 mb-2', role: 'status' },
+      h('span', { class: 'fs-5', 'aria-hidden': 'true' }, h('i', { class: 'bi ' + iconClass })),
+      h('div', {},
+        h('div', { class: 'fw-semibold', text: title }),
+        h('ul', { class: 'mb-0 ps-3 small' }, (lines || []).map(function (l) { return h('li', { text: l }); })),
+        extra || null
+      )
+    );
+  }
 
+  function renderBanners() {
+    var nodes = [];
     if (state.banners.backend) {
       var b = state.banners.backend;
-      nodes.push(h('div', { class: 'banner banner-' + b.kind, role: 'status' },
-        h('span', { class: 'banner-icon', 'aria-hidden': 'true', text: b.kind === 'error' ? '⛔' : '⚠' }),
-        h('div', { class: 'banner-text' },
-          h('strong', { text: b.title }),
-          h('ul', {}, b.lines.map(function (l) { return h('li', { text: l }); })),
-          b.extra || null
-        )
-      ));
+      nodes.push(bannerNode(b.kind, b.title, b.lines,
+        b.extra ? h('div', { class: 'text-secondary small mt-1', text: '未发现的绑定：' + backend.missing.join(', ') }) : null));
     }
-
     if (state.banners.env) {
       var e = state.banners.env;
-      nodes.push(h('div', { class: 'banner banner-warn', role: 'status' },
-        h('span', { class: 'banner-icon', 'aria-hidden': 'true', text: '⚠' }),
-        h('div', { class: 'banner-text' },
-          h('strong', { text: e.title }),
-          h('ul', {}, e.lines.map(function (l) { return h('li', { text: l }); })),
-          e.extra || null
-        )
-      ));
+      nodes.push(bannerNode('warn', e.title, e.lines,
+        h('div', { class: 'text-secondary small mt-1', text: '修复建议：以管理员身份打开 PowerShell，执行 Set-Service -Name vmcompute -StartupType Manual 后 Start-Service vmcompute。' })));
     }
-
-    setChildren(root, nodes);
+    mount('banner-root', nodes);
   }
 
   function setBackendBanner(mode) {
@@ -516,10 +559,7 @@
           '未检测到 Wails Go 绑定（window.go.main.App）。',
           '若这是浏览器直接打开 index.html，属正常现象：请改用 `wails dev` 或 `wails build` 启动桌面应用。',
           '若在桌面应用中看到本条，说明 app.go 尚未把 service 方法转发到 App 上。'
-        ],
-        extra: backend.missing.length
-          ? h('div', { class: 'faint', text: '未发现的绑定：' + backend.missing.join(', ') })
-          : null
+        ]
       };
     } else if (mode === 'fallback') {
       state.banners.backend = {
@@ -549,8 +589,7 @@
       state.banners.env = {
         kind: 'warn',
         title: '容器功能不可用：ServiceReady = false',
-        lines: problems.length ? problems : ['未提供具体原因，请到「环境自检」查看详情。'],
-        extra: h('div', { class: 'faint', text: '修复建议：以管理员身份打开 PowerShell，执行 Set-Service -Name vmcompute -StartupType Manual 后 Start-Service vmcompute（详见「环境自检」视图）。' })
+        lines: problems.length ? problems : ['未提供具体原因，请到「环境自检」查看详情。']
       };
     } else {
       state.banners.env = null;
@@ -562,15 +601,15 @@
     var pill = $('backend-pill');
     if (!pill) return;
     if (backend.mode === 'unavailable') {
-      pill.className = 'pill pill-error';
+      pill.className = 'badge rounded-pill text-bg-danger';
       pill.textContent = '后端：未就绪';
       pill.title = '未检测到 Wails Go 绑定';
     } else if (!hasRuntime()) {
-      pill.className = 'pill pill-warn';
+      pill.className = 'badge rounded-pill text-bg-warning';
       pill.textContent = '后端：无事件流';
       pill.title = 'window.runtime 缺失，实时输出不可用';
     } else {
-      pill.className = 'pill pill-ok';
+      pill.className = 'badge rounded-pill text-bg-success';
       pill.textContent = '后端：就绪';
       pill.title = 'window.go 绑定与 wails 运行时均可用';
     }
@@ -586,27 +625,34 @@
     var titleId = 'modal-title-' + (++modalSeq);
 
     var closeBtn = h('button', {
-      class: 'btn btn-sm btn-icon', type: 'button', title: '关闭 (Esc)',
-      'aria-label': '关闭对话框', text: '✕', onclick: function () { close(null); }
+      type: 'button', class: 'btn-close', 'aria-label': '关闭对话框',
+      onclick: function () { close(null); }
     });
 
-    var bodyEl = h('div', { class: 'modal-body' }, cfg.body);
-    var footEl = h('div', { class: 'modal-foot' }, cfg.foot);
-
+    var modalClass = 'modal-dialog modal-dialog-scrollable' + (cfg.wide ? ' modal-lg' : '') + (cfg.danger ? ' modal-border-danger' : '');
     var modal = h('div', {
-      class: 'modal' + (cfg.wide ? ' modal-wide' : '') + (cfg.danger ? ' modal-danger' : ''),
-      role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId
+      class: 'modal d-block', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId,
+      style: 'z-index:1090;'
     },
-      h('header', { class: 'modal-head' },
-        h('h2', { class: 'modal-title' + (cfg.danger ? ' is-danger' : ''), id: titleId, text: cfg.title }),
-        h('span', { class: 'modal-head-spacer' }),
-        closeBtn
-      ),
-      bodyEl
+      h('div', { class: modalClass },
+        h('div', { class: 'modal-content' },
+          h('div', { class: 'modal-header' },
+            h('h5', { class: 'modal-title' + (cfg.danger ? ' text-danger' : ''), id: titleId, text: cfg.title }),
+            closeBtn
+          ),
+          h('div', { class: 'modal-body' }, cfg.body)
+        )
+      )
     );
-    if (cfg.foot) modal.appendChild(footEl);
+    if (cfg.foot) {
+      modal.querySelector('.modal-content').appendChild(h('div', { class: 'modal-footer' }, cfg.foot));
+    }
+    var backdrop = h('div', {
+      class: 'modal-backdrop show', style: 'z-index:1085;',
+      onclick: function (ev) { if (ev.target === backdrop) close(null); }
+    });
 
-    setChildren(root, [modal]);
+    setChildren(root, [backdrop, modal]);
     root.hidden = false;
 
     var settled = false;
@@ -617,7 +663,7 @@
       root.hidden = true;
       setChildren(root, []);
       if (prevFocus && typeof prevFocus.focus === 'function') {
-        try { prevFocus.focus(); } catch (e) { /* 元素可能已被移除 */ }
+        try { prevFocus.focus(); } catch (e) { }
       }
       resolve(payload);
     }
@@ -647,14 +693,13 @@
     var promise = new Promise(function (res) { resolve = res; });
 
     document.addEventListener('keydown', onKey, true);
-    root.onmousedown = function (ev) { if (ev.target === root) close(null); };
 
     var target = cfg.focus
       || modal.querySelector('[data-autofocus]')
       || modal.querySelector('input:not([type="hidden"]), textarea, select, button');
     if (target) setTimeout(function () { try { target.focus(); } catch (e) {} }, 0);
 
-    return { root: root, modal: modal, body: bodyEl, foot: footEl, close: close, closed: promise };
+    return { root: root, modal: modal, close: close, closed: promise };
   }
 
   /**
@@ -664,9 +709,9 @@
   function confirmDialog(cfg) {
     var c = cfg || {};
     var boxes = (c.checkboxes || []).map(function (b) {
-      return h('label', { class: 'check' },
-        h('input', { type: 'checkbox', checked: !!b.checked, dataset: { opt: b.id } }),
-        h('span', { text: b.label })
+      return h('div', { class: 'form-check' },
+        h('input', { class: 'form-check-input', type: 'checkbox', checked: !!b.checked, dataset: { opt: b.id } }),
+        h('label', { class: 'form-check-label small', text: b.label })
       );
     });
 
@@ -674,27 +719,25 @@
     var textInput = null;
     if (textNeeded) {
       textInput = h('input', {
-        class: 'input mono', type: 'text', placeholder: textNeeded,
-        'aria-label': '请输入 ' + textNeeded + ' 以确认', dataset: { opt: 'requireText' }
+        class: 'form-control form-control-sm mono mt-1', type: 'text',
+        placeholder: textNeeded, 'aria-label': '请输入 ' + textNeeded + ' 以确认', dataset: { opt: 'requireText' }
       });
     }
 
     var body = [];
-    if (c.message) body.push(h('div', { class: 'modal-message', text: c.message }));
-    if (c.detail) body.push(h('pre', { class: 'modal-detail', text: c.detail }));
-    if (boxes.length) body.push(h('div', { class: 'form-actions' }, boxes));
+    if (c.message) body.push(h('p', { class: 'mb-2', text: c.message }));
+    if (c.detail) body.push(h('pre', { class: 'bg-body-tertiary border rounded p-2 small mb-2', text: c.detail }));
+    if (boxes.length) body.push(h('div', { class: 'd-flex flex-column gap-1 mb-2' }, boxes));
     if (textInput) {
-      body.push(h('label', { class: 'field' },
-        h('span', { class: 'field-label', text: '请输入 ' + textNeeded + ' 确认' }),
-        textInput
-      ));
+      body.push(h('label', { class: 'form-label small mb-0' }, '请输入 ' + textNeeded + ' 确认'));
+      body.push(textInput);
     }
 
-    var confirmBtn = h('button', {
-      class: 'btn ' + (c.danger === false ? 'btn-primary' : 'btn-danger'),
-      type: 'button', 'data-autofocus': true,
-      title: '确认执行该操作', 'aria-label': '确认执行',
-      text: c.confirmLabel || '确认',
+    var confirmBtn = btn(c.confirmLabel || '确认', {
+      variant: c.danger === false ? 'btn-primary' : 'btn-danger',
+      small: false,
+      attrs: { 'data-autofocus': true },
+      title: '确认执行该操作', ariaLabel: '确认执行',
       onclick: function () {
         if (textNeeded && textInput && textInput.value.trim() !== textNeeded) {
           toast('warn', '确认文本不匹配，操作已取消。');
@@ -703,23 +746,20 @@
         }
         var values = {};
         (c.checkboxes || []).forEach(function (b) {
-          var el = handle.body.querySelector('[data-opt="' + b.id + '"]');
+          var el = handle.modal.querySelector('[data-opt="' + b.id + '"]');
           values[b.id] = !!(el && el.checked);
         });
         handle.close({ confirmed: true, values: values });
       }
     });
 
-    var cancelBtn = h('button', {
-      class: 'btn', type: 'button', title: '取消 (Esc)', 'aria-label': '取消',
-      text: '取消', onclick: function () { handle.close({ confirmed: false, values: {} }); }
-    });
+    var cancelBtn = btn('取消', { small: false, title: '取消 (Esc)', ariaLabel: '取消', onclick: function () { handle.close({ confirmed: false, values: {} }); } });
 
     var handle = mountModal({
       title: c.title || '确认操作',
       danger: c.danger !== false,
       body: body,
-      foot: [h('span', { class: 'modal-foot-spacer' }), cancelBtn, confirmBtn]
+      foot: [cancelBtn, confirmBtn]
     });
 
     return handle.closed.then(function (r) { return r || { confirmed: false, values: {} }; });
@@ -727,20 +767,16 @@
 
   function showTextModal(title, text, opts) {
     var o = opts || {};
-    var pre = h('pre', { class: 'modal-detail', text: String(text) });
+    var pre = h('pre', { class: 'bg-body-tertiary border rounded p-2 small', style: 'max-height:60vh; overflow:auto;', text: String(text) });
     var copy = h('button', {
-      class: 'btn btn-sm', type: 'button', title: '复制到剪贴板', 'aria-label': '复制内容',
+      class: 'btn btn-sm btn-outline-secondary', type: 'button', title: '复制到剪贴板', 'aria-label': '复制内容',
       text: '复制', onclick: function () { copyText(String(text)); }
     });
     var handle = mountModal({
       title: title,
       wide: o.wide !== false,
       body: [pre],
-      foot: [copy, h('span', { class: 'modal-foot-spacer' }),
-        h('button', {
-          class: 'btn', type: 'button', title: '关闭 (Esc)', 'aria-label': '关闭',
-          text: '关闭', onclick: function () { handle.close(null); }
-        })]
+      foot: [copy, btn('关闭', { small: false, title: '关闭 (Esc)', ariaLabel: '关闭', onclick: function () { handle.close(null); } })]
     });
     return handle.closed;
   }
@@ -761,10 +797,10 @@
   function showErrorsModal() {
     if (!state.errors.length) { toast('info', '暂无错误记录。'); return; }
     var rows = state.errors.map(function (e) {
-      return h('div', { class: 'modal-detail' },
-        h('div', { text: '[' + fmtTime(e.time) + '] ' + e.context + (e.count > 1 ? '（×' + e.count + '）' : '') }),
+      return h('div', { class: 'border rounded p-2 mb-2 small' },
+        h('div', { class: 'fw-semibold', text: '[' + fmtTime(e.time) + '] ' + e.context + (e.count > 1 ? '（×' + e.count + '）' : '') }),
         h('div', { text: e.message }),
-        e.detail ? h('div', { class: 'faint', text: e.detail }) : null
+        e.detail ? h('div', { class: 'text-secondary', text: e.detail }) : null
       );
     });
     var handle = mountModal({
@@ -772,20 +808,14 @@
       wide: true,
       body: rows,
       foot: [
-        h('button', {
-          class: 'btn btn-danger-ghost', type: 'button', title: '清空错误记录',
-          'aria-label': '清空错误记录', text: '清空记录',
-          onclick: function () {
+        btn('清空记录', { small: false, variant: 'btn-outline-danger', title: '清空错误记录',
+          ariaLabel: '清空错误记录', onclick: function () {
             state.errors = [];
             var btn = $('status-err'); if (btn) btn.hidden = true;
             handle.close(null);
           }
         }),
-        h('span', { class: 'modal-foot-spacer' }),
-        h('button', {
-          class: 'btn', type: 'button', title: '关闭 (Esc)', 'aria-label': '关闭',
-          text: '关闭', onclick: function () { handle.close(null); }
-        })
+        btn('关闭', { small: false, title: '关闭 (Esc)', ariaLabel: '关闭', onclick: function () { handle.close(null); } })
       ]
     });
   }
@@ -804,7 +834,7 @@
     if (!root) return;
     root.hidden = true;
     clear(root);
-    if (openMenuHandle) {
+    if (openMenuHandle && openMenuHandle.anchor) {
       var prev = openMenuHandle.anchor;
       if (prev && prev.setAttribute) prev.setAttribute('aria-expanded', 'false');
       openMenuHandle = null;
@@ -815,18 +845,17 @@
   function openMenu(anchor, items) {
     closeMenu();
     var root = $('menu-root');
-    var menu = h('div', { class: 'menu', role: 'menu', 'aria-label': '操作菜单' });
+    var menu = h('div', { class: 'dropdown-menu show position-absolute shadow', role: 'menu', 'aria-label': '操作菜单', style: 'z-index:1100;' });
     var entries = [];
 
     items.forEach(function (it) {
       if (!it) return;
-      if (it.type === 'separator') { menu.appendChild(h('div', { class: 'menu-sep' })); return; }
-      if (it.type === 'label') { menu.appendChild(h('div', { class: 'menu-label', text: it.label })); return; }
+      if (it.type === 'separator') { menu.appendChild(h('li', { class: 'dropdown-divider' })); return; }
+      if (it.type === 'label') { menu.appendChild(h('li', { class: 'dropdown-header', text: it.label })); return; }
       var btn = h('button', {
         type: 'button', role: 'menuitem',
-        class: it.danger ? 'is-danger' : '',
-        title: it.title || it.label,
-        'aria-label': it.title || it.label,
+        class: 'dropdown-item' + (it.danger ? ' text-danger' : ''),
+        title: it.title || it.label, 'aria-label': it.title || it.label,
         disabled: !!it.disabled,
         text: it.label,
         onclick: function () {
@@ -839,12 +868,11 @@
       menu.appendChild(btn);
     });
 
-    var scrim = h('div', { class: 'menu-scrim', onclick: function () { closeMenu(); } });
+    var scrim = h('div', { class: 'position-fixed top-0 start-0 w-100 h-100', style: 'z-index:1095;', onclick: function () { closeMenu(); } });
     root.appendChild(scrim);
     root.appendChild(menu);
     root.hidden = false;
 
-    /* 定位：默认在锚点左下方，越界则翻转。 */
     var r = anchor.getBoundingClientRect();
     var mw = menu.offsetWidth, mh = menu.offsetHeight;
     var left = Math.max(6, Math.min(r.left, window.innerWidth - mw - 6));
@@ -880,27 +908,26 @@
 
   function stateRow(colspan, kind, opts) {
     var o = opts || {};
-    var icon = kind === 'loading' ? null : kind === 'error' ? '⛔' : kind === 'empty' ? '∅' : 'ℹ';
     var kids = [];
     if (kind === 'loading') {
-      kids.push(h('span', { class: 'spinner', 'aria-hidden': 'true' }));
-      kids.push(h('span', { class: 'state-title', text: o.title || '加载中…' }));
+      kids.push(h('span', { class: 'spinner-border spinner-border-sm text-secondary', 'aria-hidden': 'true' }));
+      kids.push(h('span', { class: 'ms-2', text: o.title || '加载中…' }));
     } else {
-      kids.push(h('span', { class: 'state-icon', 'aria-hidden': 'true', text: icon }));
-      kids.push(h('span', { class: 'state-title', text: o.title || (kind === 'error' ? '加载失败' : '暂无数据') }));
+      var iconClass = kind === 'error' ? 'bi-x-octagon-fill text-danger' : kind === 'empty' ? 'bi-info-circle-fill text-secondary' : 'bi-info-circle-fill text-info';
+      kids.push(h('span', { class: 'me-2', 'aria-hidden': 'true' }, h('i', { class: 'bi ' + iconClass })));
+      kids.push(h('span', { class: 'fw-semibold', text: o.title || (kind === 'error' ? '加载失败' : '暂无数据') }));
     }
-    if (o.message) kids.push(h('div', { class: 'state-msg', text: o.message }));
-    if (o.detail) kids.push(h('pre', { class: 'state-detail', text: o.detail }));
+    if (o.message) kids.push(h('div', { class: 'text-secondary small mt-1', text: o.message }));
+    if (o.detail) kids.push(h('pre', { class: 'bg-body-tertiary border rounded p-2 small mt-1 mb-0', text: o.detail }));
     if (o.retry) {
-      kids.push(h('div', { class: 'state-actions' },
-        h('button', {
-          class: 'btn', type: 'button', title: '重新加载', 'aria-label': '重新加载',
-          text: '重试', onclick: o.retry
-        })
-      ));
+      kids.push(h('div', { class: 'mt-2' },
+        btn('重试', {
+          title: '重新加载', ariaLabel: '重新加载',
+          onclick: o.retry
+        })));
     }
-    return h('tr', { class: 'state-row' },
-      h('td', { colspan: String(colspan) }, h('div', { class: 'state', role: kind === 'loading' ? 'status' : 'note' }, kids))
+    return h('tr', {},
+      h('td', { colspan: String(colspan) }, h('div', { class: 'd-flex flex-column align-items-start gap-1 px-2 py-4' }, kids))
     );
   }
 
@@ -911,9 +938,7 @@
     }
     if (state.error[key]) {
       var e = state.error[key];
-      setChildren(tbody, [stateRow(colspan, 'error', {
-        title: '加载失败', message: e.message, detail: e.detail, retry: retry
-      })]);
+      setChildren(tbody, [stateRow(colspan, 'error', { title: '加载失败', message: e.message, detail: e.detail, retry: retry })]);
       return true;
     }
     return false;
@@ -924,9 +949,7 @@
     if (el) el.textContent = n + ' ' + (unit || '项');
   }
 
-  function setTabCount(view, n) {
-    /* no-op: tab-count pill removed from UI */
-  }
+  function setTabCount(view, n) { /* 顶栏已无独立计数徽标 */ }
 
   /* ========================== 9. 视图切换 ========================== */
 
@@ -937,21 +960,14 @@
   /* 每个面板都能从当前缓存状态重绘：切回标签页时保证已加载的数据一定可见。 */
   function renderPanel(panel) {
     var renderers = {
-      containers: renderContainers,
-      images: renderImages,
-      sessions: renderSessions,
-      storage: renderStorage,
-      volumes: renderVolumes,
-      networks: renderNetworks,
-      env: renderEnv,
-      settings: renderSettings,
-      tasks: renderTasks
+      containers: renderContainers, images: renderImages, sessions: renderSessions,
+      storage: renderStorage, volumes: renderVolumes, networks: renderNetworks,
+      env: renderEnv, settings: renderSettings, tasks: renderTasks
     };
     var fn = renderers[panel];
     if (fn) fn();
   }
 
-  /* 面板键 -> 面板元素（单面板分组复用 view- 分组，双面板分组用 panel-）。 */
   function panelEl(panel) {
     if (panel === 'containers' || panel === 'images' || panel === 'tasks') {
       return $('view-' + panel);
@@ -971,16 +987,13 @@
       var sec = $('view-' + v);
       var on = (v === view);
       if (tab) {
+        tab.classList.toggle('active', on);
         tab.setAttribute('aria-selected', on ? 'true' : 'false');
         tab.tabIndex = on ? 0 : -1;
       }
       if (sec) sec.hidden = !on;
     });
 
-    /* 分组内：把面板 hidden 与分组可见性合并计算 ——
-       一个面板只有在「它的分组是当前选中的分组」且「它本身是
-       当前子面板」时才可见；否则一律隐藏。这样切走一个分组后，
-       该分组内所有面板都跟着隐藏，不会出现多个 section 同时可见。 */
     Object.keys(GROUPS).forEach(function (v) {
       GROUPS[v].forEach(function (panel) {
         var el = panelEl(panel);
@@ -988,12 +1001,15 @@
       });
     });
 
-    /* 二级标签的选中态 */
     Object.keys(GROUPS).forEach(function (v) {
       if (!GROUPS[v] || GROUPS[v].length < 2) return;
       GROUPS[v].forEach(function (panel) {
         var btn = $('subtab-' + v + '-' + panel);
-        if (btn) btn.setAttribute('aria-selected', (v === view && panel === active) ? 'true' : 'false');
+        if (btn) {
+          var on = (v === view && panel === active);
+          btn.classList.toggle('active', on);
+          btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        }
       });
     });
 
@@ -1001,15 +1017,12 @@
       var hash = '#/' + view;
       if (SUB[view] !== panels[0]) hash += '/' + SUB[view];
       if (location.hash !== hash) history.replaceState(null, '', hash);
-    } catch (e) { /* file:// 下可能受限，忽略 */ }
+    } catch (e) { }
     if (!opts || opts.force !== false) loadPanel(active);
-    /* 数据可能是后台（启动/轮询/事件）加载的，切页时必须重绘一次，
-       否则会看到一张空表 —— 例如任务视图。 */
     renderPanel(active);
     updateStatusLine();
   }
 
-  /* 切换分组内的子视图（二级标签页）。 */
   function selectSubView(view, panel) {
     if (!GROUPS[view] || GROUPS[view].indexOf(panel) < 0) return;
     if (state.view !== view) {
@@ -1024,7 +1037,11 @@
     });
     GROUPS[view].forEach(function (p) {
       var btn = $('subtab-' + view + '-' + p);
-      if (btn) btn.setAttribute('aria-selected', p === panel ? 'true' : 'false');
+      if (btn) {
+        var on = (p === panel);
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      }
     });
     loadPanel(panel);
     renderPanel(panel);
@@ -1033,15 +1050,9 @@
 
   function loadPanel(panel, force) {
     var loaders = {
-      containers: loadContainers,
-      images: loadImages,
-      sessions: loadSessions,
-      storage: loadStorage,
-      volumes: loadVolumes,
-      networks: loadNetworks,
-      env: loadEnv,
-      tasks: loadTasks,
-      settings: loadSettings
+      containers: loadContainers, images: loadImages, sessions: loadSessions,
+      storage: loadStorage, volumes: loadVolumes, networks: loadNetworks,
+      env: loadEnv, tasks: loadTasks, settings: loadSettings
     };
     var fn = loaders[panel];
     if (!fn) return;
@@ -1051,7 +1062,6 @@
     return fn();
   }
 
-  /* 强制重取某面板数据（绕过 STALE 缓存判断）。 */
   function forcePanel(fn, panel) {
     if (!fn) return Promise.resolve();
     var prev = state.loaded[panel];
@@ -1059,7 +1069,6 @@
     return Promise.resolve(fn()).finally(function () { state.loaded[panel] = prev; });
   }
 
-  /* 刷新当前子面板（F5）。 */
   function refreshCurrentView() {
     var btn = $('btn-refresh');
     if (btn) btn.disabled = true;
@@ -1067,7 +1076,7 @@
     var p = loadPanel(panel, true);
     Promise.resolve(p).then(
       function () { toast('info', '已刷新：' + PANEL_LABELS[panel]); },
-      function () { /* 错误已由面板内呈现 */ }
+      function () { }
     ).then(function () { if (btn) btn.disabled = false; });
   }
 
@@ -1075,7 +1084,6 @@
     return VIEW_LABELS[name] || PANEL_LABELS[name] || name;
   }
 
-  /* 当前正在显示的面板键：单面板分组就是分组名本身。 */
   function currentPanel() {
     return SUB[state.view] || (GROUPS[state.view] || [])[0] || state.view;
   }
@@ -1202,7 +1210,7 @@
 
   function rowActionButton(act, label, title, cls, data) {
     return h('button', {
-      class: 'btn btn-row' + (cls ? ' ' + cls : ''),
+      class: 'btn btn-sm btn-outline-secondary' + (cls ? ' ' + cls : ''),
       type: 'button', title: title, 'aria-label': title,
       dataset: Object.assign({ act: act }, data || {}),
       text: label
@@ -1239,49 +1247,47 @@
     var frag = document.createDocumentFragment();
     rows.forEach(function (c) {
       var st = containerState(c);
-      var cls = stateClass(st);
+      var cls = stateClassLocal(st);
       var ids = containerAliases(c);
       var stat = state.ct.stats ? findStat(c) : null;
 
       var cells = [
-        h('td', { class: 'col-name' },
-          h('div', { class: 'cell-name' },
-            h('span', { class: 'dot dot-' + cls, title: '状态：' + (c.State || c.Status || '未知'), 'aria-hidden': 'true' }),
-            h('span', { class: 'name', title: containerName(c), text: containerName(c) }),
-            h('span', { class: 'sid mono', text: shortId(c.ID, 12) })
+        h('td', {},
+          h('div', { class: 'd-flex align-items-center gap-2' },
+            h('span', { class: 'd-inline-block rounded-circle bg-' + stateColor(st), style: 'width:10px;height:10px;', title: '状态：' + (c.State || c.Status || '未知'), 'aria-hidden': 'true' }),
+            h('span', { class: 'font-monospace', title: containerName(c), text: containerName(c) }),
+            h('span', { class: 'small text-secondary font-monospace', text: shortId(c.ID, 12) })
           )
         ),
-        h('td', { class: 'mono', title: c.Image || '', text: c.Image || '—' }),
+        cell(c.Image),
         h('td', {},
-          h('span', { class: 'badge badge-' + cls, title: (c.Status || '') + ' | State=' + (c.State || ''), text: c.Status || statusLabel(st) })
+          h('span', { class: stateBadgeClass(st), title: (c.Status || '') + ' | State=' + (c.State || ''), text: c.Status || statusLabel(st) })
         ),
-        h('td', { class: 'mono', title: (c.Ports || []).join(', '), text: (c.Ports && c.Ports.length) ? c.Ports.join(', ') : '—' }),
-        h('td', { class: 'muted', title: c.CreatedAt || '', text: c.CreatedAt || c.RunningFor || '—' })
+        h('td', { class: 'font-monospace small', title: (c.Ports || []).join(', '), text: (c.Ports && c.Ports.length) ? c.Ports.join(', ') : '—' }),
+        cell(c.CreatedAt || c.RunningFor, { cls: 'text-secondary small', title: c.CreatedAt || '' })
       ];
 
       if (state.ct.stats) {
-        cells.push(h('td', { class: 'col-stat', text: stat ? (stat.CPUPerc || '—') : '—' }));
-        cells.push(h('td', { class: 'col-stat', title: stat ? (stat.MemUsage || '') : '', text: stat ? (stat.MemUsage || '—') : '—' }));
+        cells.push(cell(stat ? stat.CPUPerc : null, { cls: 'small' }));
+        cells.push(cell(stat ? stat.MemUsage : null, { cls: 'small', title: stat ? (stat.MemUsage || '') : '' }));
       }
 
-      var actions = h('div', { class: 'cell-actions' });
+      var actions = h('div', { class: 'd-flex gap-1 flex-wrap' });
       if (st === 'running') {
         actions.appendChild(rowActionButton('stop', '停止', '停止容器 ' + containerName(c), '', null));
       } else {
-        actions.appendChild(rowActionButton('start', '启动', '启动容器 ' + containerName(c), 'is-primary', null));
+        actions.appendChild(rowActionButton('start', '启动', '启动容器 ' + containerName(c), 'btn-outline-primary', null));
       }
       actions.appendChild(rowActionButton('restart', '重启', '重启容器 ' + containerName(c), '', null));
       actions.appendChild(rowActionButton('logs', '日志', '查看容器 ' + containerName(c) + ' 的日志', '', null));
       actions.appendChild(rowActionButton('terminal', '终端', '在容器 ' + containerName(c) + ' 中打开终端', '', null));
-      actions.appendChild(h('button', {
-        class: 'btn btn-row', type: 'button',
+      actions.appendChild(btn('⋯', {
         title: '更多操作：详情 / 强制终止 / 删除',
-        'aria-label': '容器 ' + containerName(c) + ' 的更多操作',
-        'aria-haspopup': 'menu', 'aria-expanded': 'false',
-        text: '⋯',
+        ariaLabel: '容器 ' + containerName(c) + ' 的更多操作',
+        attrs: { 'aria-haspopup': 'menu', 'aria-expanded': 'false' },
         onclick: function (ev) { openContainerMenu(ev.currentTarget, c); }
       }));
-      cells.push(h('td', { class: 'col-actions' }, actions));
+      cells.push(h('td', {}, actions));
 
       var tr = h('tr', {
         tabindex: '0',
@@ -1318,7 +1324,7 @@
     try {
       row = document.querySelector('#ct-body tr[data-ref="' + (window.CSS && CSS.escape ? CSS.escape(ref) : ref) + '"]');
     } catch (e) { row = null; }
-    if (row) row.classList.add('is-busy');
+    if (row) row.classList.add('opacity-50', 'pe-none');
     try {
       var out = await fn();
       var text = out === null || out === undefined ? '' : String(out);
@@ -1328,7 +1334,7 @@
       fail(verb, e);
       return false;
     } finally {
-      if (row) row.classList.remove('is-busy');
+      if (row) row.classList.remove('opacity-50', 'pe-none');
       await loadContainers();
     }
   }
@@ -1397,8 +1403,8 @@
 
   function fieldRow(label, input, opts) {
     var o = opts || {};
-    return h('label', { class: 'field' + (o.full ? ' field-full' : '') },
-      h('span', { class: 'field-label' }, label, o.required ? h('em', { class: 'req', text: ' *' }) : null),
+    return h('div', { class: 'col-12' + (o.full ? '' : ' col-md-6') },
+      h('label', { class: 'form-label small mb-1' }, label, o.required ? h('span', { class: 'text-danger', text: ' *' }) : null),
       input
     );
   }
@@ -1406,19 +1412,12 @@
   function inputEl(id, placeholder, o) {
     o = o || {};
     return h('input', {
-      class: 'input' + (o.mono ? ' mono' : ''),
+      class: 'form-control form-control-sm' + (o.mono ? ' font-monospace' : ''),
       id: id, type: o.type || 'text', placeholder: placeholder,
       title: o.title || placeholder || id, 'aria-label': o.aria || placeholder || id
     });
   }
 
-  /* 从 state.images 组装下拉选项。
-     wslc 的 image list 返回**扁平列表**（每行一个 Repository+Tag），没有
-     RepositoryTags 字段——所以这里先把扁平行按 Repository 聚合成 optgroup。
-     - Repository 非空 + Tag 非空且不是 <none> → "repo:tag"
-     - Repository 非空 + Tag 空/<none>        → 只用 "repo"（避免写出 repo:<none>）
-     - Repository 为空（dangling 镜像）        → 用短 ID 引用
-     每个 optgroup 最多列 5 个 tag，超过折叠，避免 200 tag 的库撑爆下拉。 */
   function buildImageOptions(images) {
     var list = Array.isArray(images) ? images.slice() : [];
     var groups = {};
@@ -1427,12 +1426,8 @@
       var img = list[i];
       var repo = String(img.Repository || '').trim();
       var tag = String(img.Tag || '').trim();
-      var key;
-      var ref;
-      // 与 imageRef() 保持一致：wslc 对悬空镜像把 Repository 填成 "<none>"，
-      // 这种行必须按 image ID 走，否则下拉里会出现 "<none>" / "<none>:<none>"
-      // 这样的非法引用，后续 inspect/save 都会报 invalid reference format。
       var noRepo = !repo || repo === '<none>' || repo === 'none';
+      var key, ref;
       if (noRepo) {
         var id = shortId(img.ID);
         if (!id) continue;
@@ -1445,16 +1440,12 @@
       if (!groups[key]) { groups[key] = { repo: repo, items: [] }; order.push(key); }
       var g = groups[key];
       var dup = false;
-      for (var j = 0; j < g.items.length; j++) {
-        if (g.items[j].ref === ref) { dup = true; break; }
-      }
+      for (var j = 0; j < g.items.length; j++) { if (g.items[j].ref === ref) { dup = true; break; } }
       if (dup) continue;
-      var sizeTxt = img.Size ? String(img.Size) : '';
-      g.items.push({ ref: ref, size: sizeTxt });
+      g.items.push({ ref: ref, size: img.Size ? String(img.Size) : '' });
     }
     order.sort(function (a, b) {
-      var la = a.toLowerCase();
-      var lb = b.toLowerCase();
+      var la = a.toLowerCase(), lb = b.toLowerCase();
       return la < lb ? -1 : (la > lb ? 1 : 0);
     });
     var maxPerRepo = 5;
@@ -1464,45 +1455,25 @@
       var children = [];
       if (g.items.length <= maxPerRepo) {
         for (var k = 0; k < g.items.length; k++) {
-          var it = g.items[k];
-          children.push(h('option', {
-            value: it.ref,
-            text: it.ref + (it.size ? '  ·  ' + it.size : '')
-          }));
+          children.push(h('option', { value: g.items[k].ref, text: g.items[k].ref + (g.items[k].size ? '  ·  ' + g.items[k].size : '') }));
         }
       } else {
         for (var m = 0; m < maxPerRepo; m++) {
-          var it2 = g.items[m];
-          children.push(h('option', {
-            value: it2.ref,
-            text: it2.ref + (it2.size ? '  ·  ' + it2.size : '')
-          }));
+          children.push(h('option', { value: g.items[m].ref, text: g.items[m].ref + (g.items[m].size ? '  ·  ' + g.items[m].size : '') }));
         }
-        children.push(h('option', {
-          value: '',
-          disabled: true,
-          text: '… 还有 ' + (g.items.length - maxPerRepo) + ' 个标签（切手动输入可完整列出）'
-        }));
+        children.push(h('option', { value: '', disabled: true, text: '… 还有 ' + (g.items.length - maxPerRepo) + ' 个标签' }));
       }
       return h('optgroup', { label: label + '（' + g.items.length + '）' }, children);
     });
   }
 
-  /* 更新运行容器弹窗的镜像下拉。必须传入真实的 select 元素：弹窗未挂载前
-     imageSelect 不在 DOM 里，$('run-image-select') 会命中 index.html 里给
-     selfcheck 用的 hidden 占位 span，导致下拉永远填不进选项。
-     images 缓存缺失时用占位提示，不阻塞弹窗。
-     占位符的文案会根据加载状态切换：正在加载时提示"加载中…"，
-     加载完成后才显示"本机暂无镜像"，避免用户误以为下拉为空。 */
   function refreshRunImageOptions(sel) {
     if (!sel) return;
     var imgs = state.images || [];
     var nodes = [];
     if (!imgs.length) {
       var loading = state.loading.images;
-      var text = loading
-        ? '（正在加载本机镜像…）'
-        : '（本机暂无镜像，请切到手动输入或先到「镜像」页拉取）';
+      var text = loading ? '（正在加载本机镜像…）' : '（本机暂无镜像，请切到手动输入或先到「镜像」页拉取）';
       nodes.push(h('option', { value: '', text: text, disabled: true }));
     } else {
       nodes = nodes.concat(buildImageOptions(imgs));
@@ -1511,21 +1482,18 @@
   }
 
   function runContainerDialog() {
-    /* 镜像字段：优先下拉已有镜像（来自本地 image list 缓存），
-       可切回手动输入以拉取本地没有的镜像。 */
-    var imageModes = ['select', 'input'];
     var imageMode = 'select';
     var imageInput = inputEl('run-image-input', 'nginx:latest', { mono: true, title: '镜像引用（必填）', aria: '镜像引用' });
     var imageSelect = h('select', {
-      class: 'input', id: 'run-image-select', 'aria-label': '镜像（已有）', title: '选择本机已有镜像',
+      class: 'form-select form-select-sm', id: 'run-image-select', 'aria-label': '镜像（已有）', title: '选择本机已有镜像',
       onchange: function () {
         var sel = imageSelect.options[imageSelect.selectedIndex];
         if (sel && sel.dataset.note) imageNote.textContent = sel.dataset.note;
       }
     });
-    var imageNote = h('span', { class: 'faint', style: 'margin-left:8px; font-size:var(--fs-xs);' });
+    var imageNote = h('span', { class: 'text-secondary small ms-2' });
     var imageModeSwitch = h('button', {
-      class: 'btn btn-sm', type: 'button',
+      class: 'btn btn-sm btn-outline-secondary', type: 'button',
       title: '在「下拉已有镜像」和「手动输入」之间切换',
       'aria-label': '切换镜像输入方式',
       text: '手动输入',
@@ -1553,34 +1521,27 @@
       cpus: inputEl('run-cpus', '（可选）1.5', { mono: true, aria: 'CPU 限制' }),
       entrypoint: inputEl('run-entrypoint', '（可选）', { mono: true, aria: '入口点' }),
       labels: inputEl('run-labels', 'app=demo, tier=dev', { mono: true, aria: '标签' }),
-      pull: h('select', { class: 'input', id: 'run-pull', 'aria-label': '镜像拉取策略', title: '镜像拉取策略' },
+      pull: h('select', { class: 'form-select form-select-sm', id: 'run-pull', 'aria-label': '镜像拉取策略', title: '镜像拉取策略' },
         h('option', { value: '', text: '默认' }),
         h('option', { value: 'missing', text: 'missing（缺失时拉取）' }),
         h('option', { value: 'always', text: 'always（总是拉取）' }),
         h('option', { value: 'never', text: 'never（从不拉取）' })
       ),
-      detach: h('input', { type: 'checkbox', checked: true, id: 'run-detach' }),
-      remove: h('input', { type: 'checkbox', id: 'run-remove' }),
-      tty: h('input', { type: 'checkbox', id: 'run-tty' })
+      detach: h('input', { class: 'form-check-input', type: 'checkbox', checked: true, id: 'run-detach' }),
+      remove: h('input', { class: 'form-check-input', type: 'checkbox', id: 'run-remove' }),
+      tty: h('input', { class: 'form-check-input', type: 'checkbox', id: 'run-tty' })
     };
     imageInput.hidden = true;
-    // 注意：不能在这里调用 refreshRunImageOptions(imageSelect)——imageSelect
-    // 此时还没挂进 DOM，$('run-image-select') 会命中 index.html 里的 hidden
-    // 占位 span。首屏渲染放到 mountModal 之后（见下方）。
 
-    var errBox = h('pre', { class: 'modal-detail', hidden: true });
+    var errBox = h('pre', { class: 'bg-body-tertiary border rounded p-2 small', hidden: true });
 
-    var imageField = h('div', { style: 'display:flex; gap:8px; align-items:center;' },
-      h('div', { class: 'grow', style: 'display:flex; gap:8px; align-items:center; min-width:0;' },
-        imageSelect,
-        imageInput,
-        imageNote
-      ),
+    var imageField = h('div', { class: 'col-12 d-flex align-items-center gap-2 flex-wrap' },
+      h('div', { class: 'flex-grow-1 d-flex align-items-center gap-2' }, imageSelect, imageInput, imageNote),
       imageModeSwitch
     );
 
     var body = [
-      h('div', { class: 'form-grid' },
+      h('div', { class: 'row g-2' },
         fieldRow('镜像', imageField, { required: true, full: true }),
         fieldRow('名称', els.name),
         fieldRow('命令', els.command),
@@ -1596,19 +1557,18 @@
         fieldRow('入口点', els.entrypoint),
         fieldRow('标签', els.labels),
         fieldRow('拉取策略', els.pull),
-        h('div', { class: 'form-actions' },
-          h('label', { class: 'check', title: '后台运行 (-d)' }, els.detach, h('span', { text: '-d 后台' })),
-          h('label', { class: 'check', title: '退出后自动删除 (--rm)' }, els.remove, h('span', { text: '--rm' })),
-          h('label', { class: 'check', title: '分配 TTY (-t)' }, els.tty, h('span', { text: '-t TTY' }))
+        h('div', { class: 'col-12 d-flex gap-3 flex-wrap' },
+          h('div', { class: 'form-check' }, els.detach, h('label', { class: 'form-check-label small', for: 'run-detach', text: '-d 后台' })),
+          h('div', { class: 'form-check' }, els.remove, h('label', { class: 'form-check-label small', for: 'run-remove', text: '--rm' })),
+          h('div', { class: 'form-check' }, els.tty, h('label', { class: 'form-check-label small', for: 'run-tty', text: '-t TTY' }))
         )
       ),
       errBox,
-      h('div', { class: 'faint', text: '提示：命令按空白切分（支持引号）；端口/卷/环境变量/标签支持逗号或换行分隔。' })
+      h('p', { class: 'text-secondary small mb-0', text: '提示：命令按空白切分（支持引号）；端口/卷/环境变量/标签支持逗号或换行分隔。' })
     ];
 
     var submitBtn = h('button', {
-      class: 'btn btn-primary', type: 'button', title: '创建并运行容器',
-      'aria-label': '创建并运行容器', text: '运行',
+      class: 'btn btn-sm btn-primary', type: 'button', title: '创建并运行容器', 'aria-label': '创建并运行容器', text: '运行',
       onclick: function () { submit(); }
     });
 
@@ -1617,9 +1577,8 @@
       wide: true,
       body: body,
       foot: [
-        h('span', { class: 'modal-foot-spacer' }),
         h('button', {
-          class: 'btn', type: 'button', title: '取消 (Esc)', 'aria-label': '取消',
+          class: 'btn btn-sm btn-outline-secondary', type: 'button', title: '取消 (Esc)', 'aria-label': '取消',
           text: '取消', onclick: function () { handle.close(null); }
         }),
         submitBtn
@@ -1627,31 +1586,21 @@
       onKeyDown: function (ev) { if (ev.key === 'Enter' && ev.target && ev.target.tagName === 'INPUT') { ev.preventDefault(); submit(); } }
     });
 
-    /* 首屏回填镜像下拉。必须在 mountModal 之后调用——此时 imageSelect 才
-       真正挂进 DOM；mountModal 之前调用会写到 index.html 的 hidden 占位
-       span 上，下拉永远填不进选项。 */
     refreshRunImageOptions(imageSelect);
 
-    /* 打开弹窗时刷新一次镜像缓存，把结果回填到下拉。
-       如果已经有缓存但超过 30 秒没更新，也会主动刷一次，
-       避免用户没打开过「镜像」页时下拉为空。
-       这里复用 state.loading.images（而不另设局部标志），
-       让 refreshRunImageOptions 能根据加载状态切换占位符文案。
-       镜像视图短暂的"加载中"闪烁不影响数据，可接受。 */
     var imagesStale = !state.images || state.images.length === 0 ||
       !state.loadedAt.images || (Date.now() - state.loadedAt.images) > 30000;
     if (imagesStale && hasRuntime()) {
       state.loading.images = true;
-      refreshRunImageOptions(imageSelect);   /* 立即显示"正在加载…"占位符 */
+      refreshRunImageOptions(imageSelect);
       invoke('ListImages', true).then(function (list) {
         state.images = Array.isArray(list) ? list : [];
         state.loaded.images = true;
         state.loadedAt.images = Date.now();
         setTabCount('images', state.images.length);
         refreshRunImageOptions(imageSelect);
-        /* 如果此时用户又切到了「镜像」页，那里也会重绘 */
         if (currentPanel() === 'images') renderImages();
-      }).catch(function () { /* 忽略；下拉里已有占位提示 */ })
+      }).catch(function () { })
         .then(function () { state.loading.images = false; refreshRunImageOptions(imageSelect); });
     }
 
@@ -1665,24 +1614,12 @@
         return;
       }
       var opts = {
-        Image: image,
-        Name: els.name.value.trim(),
-        Command: splitArgs(els.command.value),
-        Detach: !!els.detach.checked,
-        Remove: !!els.remove.checked,
-        TTY: !!els.tty.checked,
-        Env: splitList(els.envs.value),
-        Ports: splitList(els.ports.value),
-        Volumes: splitList(els.volumes.value),
-        Network: els.network.value.trim(),
-        WorkDir: els.workdir.value.trim(),
-        User: els.user.value.trim(),
-        Hostname: els.hostname.value.trim(),
-        Memory: els.memory.value.trim(),
-        CPUs: els.cpus.value.trim(),
-        Entrypoint: els.entrypoint.value.trim(),
-        Labels: splitList(els.labels.value),
-        Pull: els.pull.value
+        Image: image, Name: els.name.value.trim(), Command: splitArgs(els.command.value),
+        Detach: !!els.detach.checked, Remove: !!els.remove.checked, TTY: !!els.tty.checked,
+        Env: splitList(els.envs.value), Ports: splitList(els.ports.value), Volumes: splitList(els.volumes.value),
+        Network: els.network.value.trim(), WorkDir: els.workdir.value.trim(), User: els.user.value.trim(),
+        Hostname: els.hostname.value.trim(), Memory: els.memory.value.trim(), CPUs: els.cpus.value.trim(),
+        Entrypoint: els.entrypoint.value.trim(), Labels: splitList(els.labels.value), Pull: els.pull.value
       };
       submitBtn.disabled = true;
       try {
@@ -1730,11 +1667,6 @@
   function imageRef(img) {
     var repo = String(img.Repository || '').trim();
     var tag = String(img.Tag || '').trim();
-    // 与 internal/domain/types.go Image.Reference() 保持语义一致：
-    // wslc 对悬空镜像把 Repository / Tag 都填成字面量 "<none>"，此时 repo + ":" + tag
-    // 会拼出 "<none>:<none>"，wslc image inspect 等命令会拒绝这个引用并报
-    // "invalid reference format"。这种情况必须回退到 image ID（前 12 位即可，
-    // wslc 对所有 image 子命令都接受 ID 前缀）。
     var isNoRepo = !repo || repo === '<none>' || repo === 'none';
     if (isNoRepo) return shortId(img.ID, 12);
     if (!tag || tag === '<none>' || tag === 'none') return repo;
@@ -1761,69 +1693,40 @@
     var frag = document.createDocumentFragment();
     state.images.forEach(function (img) {
       var ref = imageRef(img);
-      var actions = h('div', { class: 'cell-actions' },
-        h('button', {
-          class: 'btn btn-row', type: 'button', title: '给镜像 ' + ref + ' 打新标签',
-          'aria-label': '给镜像 ' + ref + ' 打标签', text: '打标签',
-          onclick: function () { tagImageDialog(ref); }
-        }),
-        h('button', {
-          class: 'btn btn-row', type: 'button', title: '查看镜像 ' + ref + ' 的 JSON 详情',
-          'aria-label': '查看镜像 ' + ref + ' 详情', text: '详情',
-          onclick: function () { inspectImage(ref); }
-        }),
-        h('button', {
-          class: 'btn btn-row is-danger', type: 'button', title: '删除镜像 ' + ref + '（需确认）',
-          'aria-label': '删除镜像 ' + ref, text: '删除',
-          onclick: function () { removeImage(ref); }
-        })
+      var actions = h('div', { class: 'd-flex gap-1 flex-wrap' },
+        btn('打标签', { title: '给镜像 ' + ref + ' 打新标签', ariaLabel: '给镜像 ' + ref + ' 打标签', onclick: function () { tagImageDialog(ref); } }),
+        btn('详情', { title: '查看镜像 ' + ref + ' 的 JSON 详情', ariaLabel: '查看镜像 ' + ref + ' 详情', onclick: function () { inspectImage(ref); } }),
+        btn('删除', { variant: 'btn-outline-danger', title: '删除镜像 ' + ref + '（需确认）', ariaLabel: '删除镜像 ' + ref, onclick: function () { removeImage(ref); } })
       );
 
-      frag.appendChild(h('tr', {
-        tabindex: '0',
-        dataset: { ref: ref },
-        title: '按 Enter 查看详情'
-      },
-        h('td', { class: 'col-image' },
-          h('button', {
-            class: 'ref-link', type: 'button', title: '查看详情：' + ref,
-            'aria-label': '查看镜像 ' + ref + ' 详情', text: ref,
-            onclick: function () { inspectImage(ref); }
-          })
-        ),
-        h('td', { class: 'mono muted', title: img.ID || '', text: shortId(img.ID, 12) }),
-        h('td', { class: 'muted nowrap', title: img.CreatedAt || '', text: img.CreatedSince || img.CreatedAt || '—' }),
-        h('td', { class: 'col-size mono nowrap', text: img.Size || '—' }),
-        h('td', { class: 'col-actions' }, actions)
+      frag.appendChild(h('tr', { tabindex: '0', dataset: { ref: ref }, title: '按 Enter 查看详情' },
+        h('td', {}, btn(ref, { variant: 'btn-link', extraClass: 'p-0 text-decoration-none font-monospace text-reset', title: '查看详情：' + ref, ariaLabel: '查看镜像 ' + ref + ' 详情', onclick: function () { inspectImage(ref); } })),
+        h('td', { class: 'font-monospace small text-secondary', title: img.ID || '', text: shortId(img.ID, 12) }),
+        cell(img.CreatedSince || img.CreatedAt, { cls: 'small text-secondary', title: img.CreatedAt || '' }),
+        cell(img.Size),
+        h('td', {}, actions)
       ));
     });
     setChildren(tbody, [frag]);
   }
 
   async function inspectImage(ref) {
-    try {
-      var raw = await invoke('InspectImage', ref);
-      showTextModal('镜像详情 · ' + ref, pretty(raw));
-    } catch (e) { fail('InspectImage', e); }
+    try { var raw = await invoke('InspectImage', ref); showTextModal('镜像详情 · ' + ref, pretty(raw)); }
+    catch (e) { fail('InspectImage', e); }
   }
 
   function tagImageDialog(source) {
     var src = inputEl('tag-source', '源引用', { mono: true, aria: '源镜像引用' });
     src.value = source;
     var dst = inputEl('tag-target', 'myrepo/myimage:dev', { mono: true, aria: '目标镜像引用' });
-    var err = h('pre', { class: 'modal-detail', hidden: true });
+    var err = h('pre', { class: 'bg-body-tertiary border rounded p-2 small', hidden: true });
 
     var ok = h('button', {
-      class: 'btn btn-primary', type: 'button', title: '打标签 (TagImage)',
-      'aria-label': '打标签', text: '打标签',
+      class: 'btn btn-sm btn-primary', type: 'button', title: '打标签 (TagImage)', 'aria-label': '打标签', text: '打标签',
       onclick: async function () {
         err.hidden = true;
         var a = src.value.trim(), b = dst.value.trim();
-        if (!a || !b) {
-          err.hidden = false; err.textContent = '源与目标引用都不能为空。';
-          (a ? dst : src).focus();
-          return;
-        }
+        if (!a || !b) { err.hidden = false; err.textContent = '源与目标引用都不能为空。'; (a ? dst : src).focus(); return; }
         ok.disabled = true;
         try {
           var out = await invoke('TagImage', a, b);
@@ -1840,37 +1743,21 @@
 
     var handle = mountModal({
       title: '打标签 (TagImage)',
-      body: [
-        h('div', { class: 'form-grid' },
-          fieldRow('源引用', src, { required: true, full: true }),
-          fieldRow('目标引用', dst, { required: true, full: true })
-        ),
-        err
-      ],
+      body: [h('div', { class: 'row g-2' }, fieldRow('源引用', src, { required: true, full: true }), fieldRow('目标引用', dst, { required: true, full: true })), err],
       foot: [
-        h('span', { class: 'modal-foot-spacer' }),
-        h('button', {
-          class: 'btn', type: 'button', title: '取消 (Esc)', 'aria-label': '取消',
-          text: '取消', onclick: function () { handle.close(null); }
-        }), ok
+        btn('取消', { title: '取消 (Esc)', ariaLabel: '取消', onclick: function () { handle.close(null); } }), ok
       ]
     });
   }
 
   async function removeImage(ref) {
     var r = await confirmDialog({
-      title: '删除镜像',
-      message: '将删除镜像「' + ref + '」。此操作不可撤销。',
-      detail: 'RemoveImage(ref=' + ref + ')',
-      confirmLabel: '删除',
-      danger: true,
-      checkboxes: [{ id: 'force', label: '强制删除 (-f，即使被容器引用)', checked: false }]
+      title: '删除镜像', message: '将删除镜像「' + ref + '」。此操作不可撤销。', detail: 'RemoveImage(ref=' + ref + ')',
+      confirmLabel: '删除', danger: true, checkboxes: [{ id: 'force', label: '强制删除 (-f，即使被容器引用)', checked: false }]
     });
     if (!r.confirmed) return;
-    try {
-      var out = await invoke('RemoveImage', ref, !!r.values.force);
-      toast('success', '已删除镜像：' + ref, String(out || '').trim().slice(0, 300));
-    } catch (e) { fail('RemoveImage', e); }
+    try { var out = await invoke('RemoveImage', ref, !!r.values.force); toast('success', '已删除镜像：' + ref, String(out || '').trim().slice(0, 300)); }
+    catch (e) { fail('RemoveImage', e); }
     await loadImages();
   }
 
@@ -1895,22 +1782,14 @@
     var context = ($('build-context') || {}).value;
     context = (context || '').trim();
     var errEl = $('build-error');
-    if (!context) {
-      toast('warn', '请填写构建目录。');
-      var c = $('build-context'); if (c) c.focus();
-      return;
-    }
+    if (!context) { toast('warn', '请填写构建目录。'); var c = $('build-context'); if (c) c.focus(); return; }
     if (errEl) errEl.hidden = true;
     var opts = {
-      Context: context,
-      Dockerfile: (($('build-dockerfile') || {}).value || '').trim(),
-      Tags: splitList((($('build-tags') || {}).value || '')),
-      BuildArgs: [],
+      Context: context, Dockerfile: (($('build-dockerfile') || {}).value || '').trim(),
+      Tags: splitList((($('build-tags') || {}).value || '')), BuildArgs: [],
       Target: (($('build-target') || {}).value || '').trim(),
       NoCache: !!($('build-nocache') && $('build-nocache').checked),
-      Pull: !!($('build-pull') && $('build-pull').checked),
-      Labels: [],
-      Progress: ''
+      Pull: !!($('build-pull') && $('build-pull').checked), Labels: [], Progress: ''
     };
     var btn = $('btn-img-build');
     if (btn) btn.disabled = true;
@@ -1923,18 +1802,13 @@
     } catch (e) {
       var info = fail('BuildImage', e);
       if (errEl) { errEl.hidden = false; errEl.textContent = info.message + (info.detail ? '\n' + info.detail : ''); }
-    }
-    finally { if (btn) btn.disabled = false; }
+    } finally { if (btn) btn.disabled = false; }
   }
 
   async function pruneImagesDialog() {
     var r = await confirmDialog({
-      title: '清理镜像',
-      message: '清理未被使用的镜像（悬空层）。若勾选下方选项，将删除所有未被容器引用的镜像。',
-      detail: 'PruneImages(all=?)',
-      confirmLabel: '开始清理',
-      danger: true,
-      checkboxes: [{ id: 'all', label: '删除所有未使用镜像（-a，范围更大）', checked: false }]
+      title: '清理镜像', message: '清理未被使用的镜像（悬空层）。若勾选下方选项，将删除所有未被容器引用的镜像。', detail: 'PruneImages(all=?)',
+      confirmLabel: '开始清理', danger: true, checkboxes: [{ id: 'all', label: '删除所有未使用镜像（-a，范围更大）', checked: false }]
     });
     if (!r.confirmed) return;
     try {
@@ -1946,36 +1820,19 @@
     } catch (e) { fail('PruneImages', e); }
   }
 
-  /* ---------- 镜像导入 / 导出 ----------
-     Wails v2 的 JS 运行时没有 OpenFileDialog / SaveFileDialog 绑定，所以这里
-     直接用手动路径输入，同时把「拖拽到按钮」作为可选的便捷入口：把 tar 文件
-     拖到「导入…」按钮上会自动填到路径输入框，然后再点「导入」执行。
-     导出走 wslc image save -o，导入走 wslc image load -i。
-  */
   function imageExportDialog() {
-    if (!state.images.length) {
-      toast('info', '本机没有可导出的镜像。');
-      return;
-    }
-    var opts = buildImageOptions(state.images);
-    var refSel = h('select', { class: 'input', 'aria-label': '要导出的镜像', title: '选择要导出的镜像' });
-    setChildren(refSel, opts);
+    if (!state.images.length) { toast('info', '本机没有可导出的镜像。'); return; }
+    var refSel = h('select', { class: 'form-select form-select-sm', 'aria-label': '要导出的镜像', title: '选择要导出的镜像' });
+    setChildren(refSel, buildImageOptions(state.images));
     if (refSel.options.length) refSel.selectedIndex = 0;
 
-    var pathInput = h('input', {
-      class: 'input mono', type: 'text',
-      placeholder: 'D:\\exports\\nginx.tar',
-      title: '导出目标路径（必须为绝对路径）',
-      'aria-label': '导出目标路径'
-    });
-
-    var overwriteBox = h('input', { type: 'checkbox', id: 'img-export-ow' });
-    var err = h('pre', { class: 'modal-detail', hidden: true });
-    var busy = h('span', { class: 'spinner', 'aria-hidden': 'true', hidden: true });
+    var pathInput = h('input', { class: 'form-control form-control-sm font-monospace', type: 'text', placeholder: 'D:\\exports\\nginx.tar', title: '导出目标路径（必须为绝对路径）', 'aria-label': '导出目标路径' });
+    var overwriteBox = h('input', { class: 'form-check-input', type: 'checkbox', id: 'img-export-ow' });
+    var err = h('pre', { class: 'bg-body-tertiary border rounded p-2 small', hidden: true });
+    var busy = h('span', { class: 'spinner-border spinner-border-sm text-secondary', 'aria-hidden': 'true', hidden: true });
 
     var ok = h('button', {
-      class: 'btn btn-primary', type: 'button', title: '导出 (ExportImage)',
-      'aria-label': '导出镜像', text: '导出',
+      class: 'btn btn-sm btn-primary', type: 'button', title: '导出 (ExportImage)', 'aria-label': '导出镜像', text: '导出',
       onclick: async function () {
         err.hidden = true;
         var ref = String(refSel.value || '').trim();
@@ -1984,95 +1841,51 @@
         if (!dst) { err.hidden = false; err.textContent = '请输入目标文件路径（例如 D:\\exports\\nginx.tar）。'; pathInput.focus(); return; }
         if (!isAbsPath(dst)) { err.hidden = false; err.textContent = '路径必须是绝对路径（例如 D:\\exports\\nginx.tar）。'; pathInput.focus(); return; }
         ok.disabled = true; busy.hidden = false;
-        try {
-          var out = await invoke('ExportImage', ref, dst, !!overwriteBox.checked);
-          handle.close(null);
-          toast('success', '镜像已导出：' + dst, String(out || '').trim().slice(0, 300));
-        } catch (e) {
-          var info = recordError('ExportImage', e);
-          err.hidden = false; err.textContent = info.message + (info.detail ? '\n' + info.detail : '');
-          toast('error', '导出失败：' + info.message);
-        } finally { ok.disabled = false; busy.hidden = true; }
+        try { var out = await invoke('ExportImage', ref, dst, !!overwriteBox.checked); handle.close(null); toast('success', '镜像已导出：' + dst, String(out || '').trim().slice(0, 300)); }
+        catch (e) { var info = recordError('ExportImage', e); err.hidden = false; err.textContent = info.message + (info.detail ? '\n' + info.detail : ''); toast('error', '导出失败：' + info.message); }
+        finally { ok.disabled = false; busy.hidden = true; }
       }
     });
 
     var handle = mountModal({
       title: '导出镜像 (ExportImage)',
       body: [
-        h('div', { class: 'form-grid' },
-          fieldRow('镜像', refSel, { required: true, full: true }),
-          fieldRow('目标路径', pathInput, { required: true, full: true }),
-          h('label', { class: 'check' }, overwriteBox,
-            h('span', { text: '如果目标文件已存在，则覆盖' })
-          ),
-          h('p', { class: 'faint' },
-            '后端命令：wslc image save -o <path> <ref>。大镜像可能需要数分钟，请确保导出目录写权限足够。'
-          )
-        ),
+        h('div', { class: 'row g-2' }, fieldRow('镜像', refSel, { required: true, full: true }), fieldRow('目标路径', pathInput, { required: true, full: true }),
+          h('div', { class: 'col-12 form-check' }, overwriteBox, h('label', { class: 'form-check-label small', for: 'img-export-ow', text: '如果目标文件已存在，则覆盖' })),
+          h('p', { class: 'text-secondary small col-12', text: '后端命令：wslc image save -o <path> <ref>。大镜像可能需要数分钟。' })),
         err
       ],
-      foot: [busy, h('span', { class: 'modal-foot-spacer' }),
-        h('button', {
-          class: 'btn', type: 'button', title: '取消 (Esc)', 'aria-label': '取消',
-          text: '取消', onclick: function () { handle.close(null); }
-        }), ok]
+      foot: [busy, h('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', title: '取消 (Esc)', 'aria-label': '取消', text: '取消', onclick: function () { handle.close(null); } }), ok]
     });
   }
 
   function imageImportDialog() {
-    var pathInput = h('input', {
-      class: 'input mono', type: 'text',
-      placeholder: 'D:\\exports\\nginx.tar',
-      title: '要导入的 tar 文件路径（必须为绝对路径）',
-      'aria-label': '导入源文件路径'
-    });
-    var err = h('pre', { class: 'modal-detail', hidden: true });
-    var busy = h('span', { class: 'spinner', 'aria-hidden': 'true', hidden: true });
+    var pathInput = h('input', { class: 'form-control form-control-sm font-monospace', type: 'text', placeholder: 'D:\\exports\\nginx.tar', title: '要导入的 tar 文件路径（必须为绝对路径）', 'aria-label': '导入源文件路径' });
+    var err = h('pre', { class: 'bg-body-tertiary border rounded p-2 small', hidden: true });
+    var busy = h('span', { class: 'spinner-border spinner-border-sm text-secondary', 'aria-hidden': 'true', hidden: true });
 
     var ok = h('button', {
-      class: 'btn btn-primary', type: 'button', title: '导入 (ImportImage)',
-      'aria-label': '导入镜像', text: '导入',
+      class: 'btn btn-sm btn-primary', type: 'button', title: '导入 (ImportImage)', 'aria-label': '导入镜像', text: '导入',
       onclick: async function () {
         err.hidden = true;
         var src = String(pathInput.value || '').trim();
         if (!src) { err.hidden = false; err.textContent = '请输入 tar 文件路径。'; pathInput.focus(); return; }
         if (!isAbsPath(src)) { err.hidden = false; err.textContent = '路径必须是绝对路径。'; pathInput.focus(); return; }
         ok.disabled = true; busy.hidden = false;
-        try {
-          var out = await invoke('ImportImage', src);
-          handle.close(null);
-          toast('success', '已从文件导入镜像：' + src, String(out || '').trim().slice(0, 300));
-          await loadImages();
-        } catch (e) {
-          var info = recordError('ImportImage', e);
-          err.hidden = false; err.textContent = info.message + (info.detail ? '\n' + info.detail : '');
-          toast('error', '导入失败：' + info.message);
-        } finally { ok.disabled = false; busy.hidden = true; }
+        try { var out = await invoke('ImportImage', src); handle.close(null); toast('success', '已从文件导入镜像：' + src, String(out || '').trim().slice(0, 300)); await loadImages(); }
+        catch (e) { var info = recordError('ImportImage', e); err.hidden = false; err.textContent = info.message + (info.detail ? '\n' + info.detail : ''); toast('error', '导入失败：' + info.message); }
+        finally { ok.disabled = false; busy.hidden = true; }
       }
     });
-
-    var dropZone = h('div', {
-      class: 'drop-hint', style: 'padding:8px; margin-top:6px; border:1px dashed var(--border, #444); border-radius:6px; font-size:var(--fs-xs);',
-      title: '把 tar 文件拖到这里可以自动填路径'
-    }, '也可将 tar 文件拖拽到本输入框：');
 
     var handle = mountModal({
       title: '导入镜像 (ImportImage)',
       body: [
-        h('div', { class: 'form-grid' },
-          fieldRow('tar 文件路径', pathInput, { required: true, full: true }),
-          dropZone,
-          h('p', { class: 'faint' },
-            '后端命令：wslc image load -i <path>。文件必须是 wslc / docker save 生成的 tar。'
-          )
-        ),
+        h('div', { class: 'row g-2' }, fieldRow('tar 文件路径', pathInput, { required: true, full: true }),
+          h('p', { class: 'text-secondary small col-12', text: '后端命令：wslc image load -i <path>。文件必须是 wslc / docker save 生成的 tar。' })),
         err
       ],
-      foot: [busy, h('span', { class: 'modal-foot-spacer' }),
-        h('button', {
-          class: 'btn', type: 'button', title: '取消 (Esc)', 'aria-label': '取消',
-          text: '取消', onclick: function () { handle.close(null); }
-        }), ok]
+      foot: [busy, h('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', title: '取消 (Esc)', 'aria-label': '取消', text: '取消', onclick: function () { handle.close(null); } }), ok]
     });
   }
 
@@ -2087,41 +1900,25 @@
 
   async function loadSessions() {
     var key = 'sessions';
-    state.loading[key] = true;
-    state.error[key] = null;
+    state.loading[key] = true; state.error[key] = null;
     renderSessions();
     try {
       var list = await invoke('ListSessions');
       state.sessions = Array.isArray(list) ? list : [];
-      state.loaded[key] = true;
-      state.loadedAt[key] = Date.now();
+      state.loaded[key] = true; state.loadedAt[key] = Date.now();
       touchLast();
-    } catch (e) {
-      state.error[key] = normalizeError(e);
-      if (!state.loaded[key]) state.sessions = [];
-      fail('ListSessions', e, { showDetail: false });
-    } finally {
-      state.loading[key] = false;
-      renderSessions();
-      updateStatusLine();
-    }
+    } catch (e) { state.error[key] = normalizeError(e); if (!state.loaded[key]) state.sessions = []; fail('ListSessions', e, { showDetail: false }); }
+    finally { state.loading[key] = false; renderSessions(); updateStatusLine(); }
   }
 
   function renderSessions() {
     var tbody = $('sess-body');
     if (!tbody) return;
     var cols = 4;
-    if (renderLoadedState(tbody, 'sessions', cols, function () { loadSessions(); })) {
-      setCount('sess-count', 0, '个');
-      return;
-    }
+    if (renderLoadedState(tbody, 'sessions', cols, function () { loadSessions(); })) { setCount('sess-count', 0, '个'); return; }
     setCount('sess-count', state.sessions.length, '个');
     if (!state.sessions.length) {
-      setChildren(tbody, [stateRow(cols, 'empty', {
-        title: '没有活动会话',
-        message: '首次调用任意 wslc 命令时会自动创建默认会话。若需要手动创建，请使用命令行 wslc <command> --session <name>。',
-        retry: function () { loadSessions(); }
-      })]);
+      setChildren(tbody, [stateRow(cols, 'empty', { title: '没有活动会话', message: '首次调用任意 wslc 命令时会自动创建默认会话。', retry: function () { loadSessions(); } })]);
       return;
     }
     var frag = document.createDocumentFragment();
@@ -2129,32 +1926,14 @@
       var name = String(sess.Name || '').trim() || '（无名称）';
       var id = sess.ID;
       var pid = sess.CreatorPid;
-      frag.appendChild(h('tr', {
-        tabindex: '0',
-        dataset: { id: String(id), name: name },
-        title: '按 Enter 查看详情'
-      },
-        h('td', { class: 'mono', text: String(id) }),
-        h('td', { class: 'col-name', text: name }),
-        h('td', { class: 'mono muted', text: pid ? String(pid) : '—' }),
-        h('td', { class: 'col-actions' },
-          h('div', { class: 'cell-actions' },
-            h('button', {
-              class: 'btn btn-row', type: 'button',
-              title: '查看会话 ' + name + ' 的 JSON 详情',
-              'aria-label': '查看会话 ' + name + ' 详情',
-              text: '详情',
-              onclick: function () { showTextModal('会话详情 · ' + name, JSON.stringify(sess, null, 2)); }
-            }),
-            h('button', {
-              class: 'btn btn-row is-danger', type: 'button',
-              title: '终止会话 ' + name + '（会结束其上所有容器进程）',
-              'aria-label': '终止会话 ' + name,
-              text: '终止',
-              onclick: function () { terminateSessionDialog(id, name); }
-            })
-          )
-        )
+      frag.appendChild(h('tr', { tabindex: '0', dataset: { id: String(id), name: name }, title: '按 Enter 查看详情' },
+        h('td', { class: 'font-monospace', text: String(id) }),
+        h('td', { text: name }),
+        h('td', { class: 'font-monospace small text-secondary', text: pid ? String(pid) : '—' }),
+        h('td', {}, h('div', { class: 'd-flex gap-1 flex-wrap' },
+          btn('详情', { title: '查看会话 ' + name + ' 的 JSON 详情', ariaLabel: '查看会话 ' + name + ' 详情', onclick: function () { showTextModal('会话详情 · ' + name, JSON.stringify(sess, null, 2)); } }),
+          btn('终止', { variant: 'btn-outline-danger', title: '终止会话 ' + name + '（会结束其上所有容器进程）', ariaLabel: '终止会话 ' + name, onclick: function () { terminateSessionDialog(id, name); } })
+        ))
       ));
     });
     setChildren(tbody, [frag]);
@@ -2162,27 +1941,16 @@
 
   async function terminateSessionDialog(id, name) {
     var r = await confirmDialog({
-      title: '终止 wslc 会话',
-      message: '将终止会话「' + name + '」。这会结束该会话下所有正在运行的容器与进程，未落盘的数据可能丢失。此操作不可撤销。',
-      detail: 'TerminateSession(id=' + id + ')',
-      confirmLabel: '终止',
-      danger: true,
-      requireText: 'TERMINATE'
+      title: '终止 wslc 会话', message: '将终止会话「' + name + '」。这会结束该会话下所有正在运行的容器与进程，未落盘的数据可能丢失。此操作不可撤销。', detail: 'TerminateSession(id=' + id + ')',
+      confirmLabel: '终止', danger: true, requireText: 'TERMINATE'
     });
     if (!r.confirmed) return;
-    try {
-      var out = await invoke('TerminateSession', id);
-      toast('success', '已终止会话：' + name, String(out || '').trim().slice(0, 300));
-    } catch (e) { fail('TerminateSession', e); }
+    try { var out = await invoke('TerminateSession', id); toast('success', '已终止会话：' + name, String(out || '').trim().slice(0, 300)); }
+    catch (e) { fail('TerminateSession', e); }
     await loadSessions();
   }
 
   /* ========================== 12b. 会话存储视图 ========================== */
-
-  /* %LOCALAPPDATA%\wslc 为什么那么大：每个 wslc 会话的根文件系统都是一个
-     storage.vhdx 动态磁盘，镜像层、构建缓存、卷数据全都落在里面。
-     `wslc system session terminate` 只停 VM，不会删除或截断这个文件，
-     所以磁盘会一直留着。本视图是唯一能看到它、能压缩它、能删它的地方。 */
 
   function formatBytesJS(n) {
     n = Number(n) || 0;
@@ -2196,34 +1964,22 @@
 
   async function loadStorage() {
     var key = 'storage';
-    state.loading[key] = true;
-    state.error[key] = null;
+    state.loading[key] = true; state.error[key] = null;
     renderStorage();
     try {
       var list = await invoke('ListSessionStorage');
       state.storage = Array.isArray(list) ? list : [];
-      state.loaded[key] = true;
-      state.loadedAt[key] = Date.now();
+      state.loaded[key] = true; state.loadedAt[key] = Date.now();
       touchLast();
-    } catch (e) {
-      state.error[key] = normalizeError(e);
-      if (!state.loaded[key]) state.storage = [];
-      fail('ListSessionStorage', e, { showDetail: false });
-    } finally {
-      state.loading[key] = false;
-      renderStorage();
-      updateStatusLine();
-    }
+    } catch (e) { state.error[key] = normalizeError(e); if (!state.loaded[key]) state.storage = []; fail('ListSessionStorage', e, { showDetail: false }); }
+    finally { state.loading[key] = false; renderStorage(); updateStatusLine(); }
   }
 
   function renderStorage() {
     var tbody = $('stor-body');
     if (!tbody) return;
     var cols = 5;
-    if (renderLoadedState(tbody, 'storage', cols, function () { loadStorage(); })) {
-      setCount('stor-count', 0, '个');
-      return;
-    }
+    if (renderLoadedState(tbody, 'storage', cols, function () { loadStorage(); })) { setCount('stor-count', 0, '个'); return; }
     var items = state.storage;
     setCount('stor-count', items.length, '个');
     var total = items.reduce(function (n, s) { return n + (Number(s.BytesOnDisk) || 0); }, 0);
@@ -2231,11 +1987,7 @@
     if (totalEl) totalEl.textContent = items.length ? formatBytesJS(total) : '—';
 
     if (!items.length) {
-      setChildren(tbody, [stateRow(cols, 'empty', {
-        title: '没有会话存储',
-        message: '尚未创建过任何 wslc 会话。首次调用任意 wslc 命令时会自动创建默认会话，其磁盘文件为 storage.vhdx。',
-        retry: function () { loadStorage(); }
-      })]);
+      setChildren(tbody, [stateRow(cols, 'empty', { title: '没有会话存储', message: '尚未创建过任何 wslc 会话。', retry: function () { loadStorage(); } })]);
       return;
     }
 
@@ -2245,40 +1997,16 @@
       var exists = !!st.Exists;
       var active = !!st.Active;
       var size = exists ? formatBytesJS(st.BytesOnDisk) : '—';
-      var title = st.Path ? st.Path : '';
       var disabled = !exists || active;
-      frag.appendChild(h('tr', {
-        tabindex: '0',
-        dataset: { name: name, active: active ? '1' : '0', exists: exists ? '1' : '0' }
-      },
-        h('td', { class: 'col-name', text: name, title: title }),
-        h('td', { class: 'mono', text: size, title: exists ? String(st.BytesOnDisk || 0) + ' bytes' : '' }),
+      frag.appendChild(h('tr', { tabindex: '0', dataset: { name: name, active: active ? '1' : '0', exists: exists ? '1' : '0' } },
+        h('td', { text: name, title: st.Path || '' }),
+        h('td', { class: 'font-monospace', text: size, title: exists ? String(st.BytesOnDisk || 0) + ' bytes' : '' }),
         h('td', { text: exists ? '存在' : '已删除' }),
-        h('td', {
-          class: active ? 'badge badge-warn' : 'badge',
-          text: active ? '运行中' : '已停止',
-          title: active ? '会话 VM 正在运行：磁盘被占用，压缩与删除会失败' : '会话 VM 已停止：可以压缩或删除磁盘'
-        }),
-        h('td', { class: 'col-actions' },
-          h('div', { class: 'cell-actions' },
-            h('button', {
-              class: 'btn btn-row', type: 'button',
-              title: '调用 diskpart 压缩 storage.vhdx，把未使用的空间还给磁盘（不丢数据）',
-              'aria-label': '压缩 ' + name + ' 的存储',
-              disabled: disabled,
-              text: '压缩',
-              onclick: function () { shrinkStorageDialog(name, st); }
-            }),
-            h('button', {
-              class: 'btn btn-row is-danger', type: 'button',
-              title: '删除 storage.vhdx，彻底释放磁盘（镜像、容器、卷数据全部丢失）',
-              'aria-label': '删除 ' + name + ' 的存储',
-              disabled: disabled,
-              text: '删除',
-              onclick: function () { resetStorageDialog(name, st); }
-            })
-          )
-        )
+        h('td', {}, h('span', { class: active ? 'badge rounded-pill text-bg-warning' : 'badge rounded-pill text-bg-secondary', text: active ? '运行中' : '已停止', title: active ? '会话 VM 正在运行：磁盘被占用，压缩与删除会失败' : '会话 VM 已停止：可以压缩或删除磁盘' })),
+        h('td', {}, h('div', { class: 'd-flex gap-1 flex-wrap' },
+          btn('压缩', { disabled: disabled, title: '调用 diskpart 压缩 storage.vhdx，把未使用的空间还给磁盘（不丢数据）', ariaLabel: '压缩 ' + name + ' 的存储', onclick: function () { shrinkStorageDialog(name, st); } }),
+          btn('删除', { variant: 'btn-outline-danger', disabled: disabled, title: '删除 storage.vhdx，彻底释放磁盘（镜像、容器、卷数据全部丢失）', ariaLabel: '删除 ' + name + ' 的存储', onclick: function () { resetStorageDialog(name, st); } })
+        ))
       ));
     });
     setChildren(tbody, [frag]);
@@ -2287,37 +2015,23 @@
   async function shrinkStorageDialog(name, st) {
     var msg = st.Active
       ? '会话「' + name + '」正在运行，请先在会话视图终止它再压缩。'
-      : '将调用 Windows 的 diskpart 压缩会话「' + name + '」的 storage.vhdx（' + (st.SizeText || formatBytesJS(st.BytesOnDisk)) + '）。\n\n压缩会保留全部镜像、容器与卷数据，只把未使用的空间还给磁盘。diskpart 需要管理员权限；若以普通用户启动本程序，请改用「删除」释放空间，或以管理员身份重新打开本程序。';
-    var r = await confirmDialog({
-      title: '压缩会话存储',
-      message: msg,
-      detail: 'ShrinkSessionStorage(name=' + name + ')',
-      confirmLabel: '压缩',
-      danger: false
-    });
+      : '将调用 Windows 的 diskpart 压缩会话「' + name + '」的 storage.vhdx（' + (st.SizeText || formatBytesJS(st.BytesOnDisk)) + '）。\n\n压缩会保留全部镜像、容器与卷数据，只把未使用的空间还给磁盘。diskpart 需要管理员权限。';
+    var r = await confirmDialog({ title: '压缩会话存储', message: msg, detail: 'ShrinkSessionStorage(name=' + name + ')', confirmLabel: '压缩', danger: false });
     if (!r.confirmed) return;
-    try {
-      var out = await invoke('ShrinkSessionStorage', name);
-      toast('success', '已压缩会话存储：' + name, String(out || '').trim().slice(0, 300));
-    } catch (e) { fail('ShrinkSessionStorage', e); }
+    try { var out = await invoke('ShrinkSessionStorage', name); toast('success', '已压缩会话存储：' + name, String(out || '').trim().slice(0, 300)); }
+    catch (e) { fail('ShrinkSessionStorage', e); }
     await loadStorage();
   }
 
   async function resetStorageDialog(name, st) {
     var size = st.SizeText || formatBytesJS(st.BytesOnDisk);
     var r = await confirmDialog({
-      title: '删除会话存储',
-      message: '将删除会话「' + name + '」的 storage.vhdx（' + size + '）。\n\n其中的镜像、容器、构建缓存与卷数据会全部丢失，且不可恢复。wslc 会在下次使用时以同一会话名重新创建一个空磁盘。',
-      detail: 'ResetSessionStorage(name=' + name + ') · ' + (st.Path || ''),
-      confirmLabel: '删除',
-      danger: true,
-      requireText: 'DELETE'
+      title: '删除会话存储', message: '将删除会话「' + name + '」的 storage.vhdx（' + size + '）。\n\n其中的镜像、容器、构建缓存与卷数据会全部丢失，且不可恢复。', detail: 'ResetSessionStorage(name=' + name + ') · ' + (st.Path || ''),
+      confirmLabel: '删除', danger: true, requireText: 'DELETE'
     });
     if (!r.confirmed) return;
-    try {
-      var out = await invoke('ResetSessionStorage', name);
-      toast('success', '已删除会话存储：' + name, String(out || '').trim().slice(0, 300));
-    } catch (e) { fail('ResetSessionStorage', e); }
+    try { var out = await invoke('ResetSessionStorage', name); toast('success', '已删除会话存储：' + name, String(out || '').trim().slice(0, 300)); }
+    catch (e) { fail('ResetSessionStorage', e); }
     await loadStorage();
   }
 
@@ -2325,69 +2039,36 @@
 
   async function loadVolumes() {
     var key = 'volumes';
-    state.loading[key] = true;
-    state.error[key] = null;
+    state.loading[key] = true; state.error[key] = null;
     renderVolumes();
-    try {
-      var list = await invoke('ListVolumes');
-      state.volumes = Array.isArray(list) ? list : [];
-      state.loaded[key] = true;
-      state.loadedAt[key] = Date.now();
-      setTabCount('volumes', state.volumes.length);
-      touchLast();
-    } catch (e) {
-      state.error[key] = normalizeError(e);
-      if (!state.loaded[key]) state.volumes = [];
-      fail('ListVolumes', e, { showDetail: false });
-    } finally {
-      state.loading[key] = false;
-      renderVolumes();
-      updateStatusLine();
-    }
+    try { var list = await invoke('ListVolumes'); state.volumes = Array.isArray(list) ? list : []; state.loaded[key] = true; state.loadedAt[key] = Date.now(); setTabCount('volumes', state.volumes.length); touchLast(); }
+    catch (e) { state.error[key] = normalizeError(e); if (!state.loaded[key]) state.volumes = []; fail('ListVolumes', e, { showDetail: false }); }
+    finally { state.loading[key] = false; renderVolumes(); updateStatusLine(); }
   }
 
   function renderVolumes() {
     var tbody = $('vol-body');
     if (!tbody) return;
     var cols = 6;
-    if (renderLoadedState(tbody, 'volumes', cols, function () { loadVolumes(); })) {
-      setCount('vol-count', 0, '个');
-      return;
-    }
+    if (renderLoadedState(tbody, 'volumes', cols, function () { loadVolumes(); })) { setCount('vol-count', 0, '个'); return; }
     setCount('vol-count', state.volumes.length, '个');
     if (!state.volumes.length) {
-      setChildren(tbody, [stateRow(cols, 'empty', {
-        title: '没有卷',
-        message: '在上方填写名称后点「创建卷」。',
-        retry: function () { loadVolumes(); }
-      })]);
+      setChildren(tbody, [stateRow(cols, 'empty', { title: '没有卷', message: '在上方填写名称后点「创建卷」。', retry: function () { loadVolumes(); } })]);
       return;
     }
     var frag = document.createDocumentFragment();
     state.volumes.forEach(function (v) {
       var name = v.Name || '';
-      frag.appendChild(h('tr', {
-        tabindex: '0', dataset: { ref: name }, title: '按 Enter 查看详情'
-      },
-        h('td', { class: 'mono', title: name, text: name || '—' }),
-        h('td', { text: v.Driver || '—' }),
-        h('td', { text: v.Scope || '—' }),
-        h('td', { class: 'mono muted', title: v.Mountpoint || '', text: v.Mountpoint || '—' }),
-        h('td', { class: 'muted nowrap', title: v.CreatedAt || '', text: v.CreatedAt || '—' }),
-        h('td', { class: 'col-actions' },
-          h('div', { class: 'cell-actions' },
-            h('button', {
-              class: 'btn btn-row', type: 'button', title: '查看卷 ' + name + ' 详情',
-              'aria-label': '查看卷 ' + name + ' 详情', text: '详情',
-              onclick: function () { showTextModal('卷详情 · ' + name, JSON.stringify(v, null, 2)); }
-            }),
-            h('button', {
-              class: 'btn btn-row is-danger', type: 'button', title: '删除卷 ' + name + '（需确认）',
-              'aria-label': '删除卷 ' + name, text: '删除',
-              onclick: function () { removeVolume(name); }
-            })
-          )
-        )
+      frag.appendChild(h('tr', { tabindex: '0', dataset: { ref: name }, title: '按 Enter 查看详情' },
+        cell(name, { cls: 'font-monospace' }),
+        cell(v.Driver, { cls: '' }),
+        cell(v.Scope, { cls: '' }),
+        cell(v.Mountpoint, { cls: 'font-monospace small text-secondary' }),
+        cell(v.CreatedAt, { cls: 'small text-secondary' }),
+        h('td', {}, h('div', { class: 'd-flex gap-1 flex-wrap' },
+          btn('详情', { title: '查看卷 ' + name + ' 详情', ariaLabel: '查看卷 ' + name + ' 详情', onclick: function () { showTextModal('卷详情 · ' + name, JSON.stringify(v, null, 2)); } }),
+          btn('删除', { variant: 'btn-outline-danger', title: '删除卷 ' + name + '（需确认）', ariaLabel: '删除卷 ' + name, onclick: function () { removeVolume(name); } })
+        ))
       ));
     });
     setChildren(tbody, [frag]);
@@ -2399,28 +2080,15 @@
     var name = nameEl ? nameEl.value.trim() : '';
     if (!name) { toast('warn', '卷名称不能为空。'); if (nameEl) nameEl.focus(); return; }
     var driver = ($('vol-driver') || {}).value || '';
-    try {
-      var out = await invoke('CreateVolume', name, driver.trim());
-      toast('success', '已创建卷：' + name, String(out || '').trim().slice(0, 200));
-      if (nameEl) nameEl.value = '';
-      await loadVolumes();
-    } catch (e) { fail('CreateVolume', e); }
+    try { var out = await invoke('CreateVolume', name, driver.trim()); toast('success', '已创建卷：' + name, String(out || '').trim().slice(0, 200)); if (nameEl) nameEl.value = ''; await loadVolumes(); }
+    catch (e) { fail('CreateVolume', e); }
   }
 
   async function removeVolume(name) {
-    var r = await confirmDialog({
-      title: '删除卷',
-      message: '将删除卷「' + name + '」，其中的数据会一并丢失，且不可恢复。',
-      detail: 'RemoveVolume(name=' + name + ')',
-      confirmLabel: '删除卷',
-      danger: true,
-      requireText: name
-    });
+    var r = await confirmDialog({ title: '删除卷', message: '将删除卷「' + name + '」，其中的数据会一并丢失，且不可恢复。', detail: 'RemoveVolume(name=' + name + ')', confirmLabel: '删除卷', danger: true, requireText: name });
     if (!r.confirmed) return;
-    try {
-      var out = await invoke('RemoveVolume', name, false);
-      toast('success', '已删除卷：' + name, String(out || '').trim().slice(0, 200));
-    } catch (e) { fail('RemoveVolume', e); }
+    try { var out = await invoke('RemoveVolume', name, false); toast('success', '已删除卷：' + name, String(out || '').trim().slice(0, 200)); }
+    catch (e) { fail('RemoveVolume', e); }
     await loadVolumes();
   }
 
@@ -2428,42 +2096,21 @@
 
   async function loadNetworks() {
     var key = 'networks';
-    state.loading[key] = true;
-    state.error[key] = null;
+    state.loading[key] = true; state.error[key] = null;
     renderNetworks();
-    try {
-      var list = await invoke('ListNetworks');
-      state.networks = Array.isArray(list) ? list : [];
-      state.loaded[key] = true;
-      state.loadedAt[key] = Date.now();
-      setTabCount('networks', state.networks.length);
-      touchLast();
-    } catch (e) {
-      state.error[key] = normalizeError(e);
-      if (!state.loaded[key]) state.networks = [];
-      fail('ListNetworks', e, { showDetail: false });
-    } finally {
-      state.loading[key] = false;
-      renderNetworks();
-      updateStatusLine();
-    }
+    try { var list = await invoke('ListNetworks'); state.networks = Array.isArray(list) ? list : []; state.loaded[key] = true; state.loadedAt[key] = Date.now(); setTabCount('networks', state.networks.length); touchLast(); }
+    catch (e) { state.error[key] = normalizeError(e); if (!state.loaded[key]) state.networks = []; fail('ListNetworks', e, { showDetail: false }); }
+    finally { state.loading[key] = false; renderNetworks(); updateStatusLine(); }
   }
 
   function renderNetworks() {
     var tbody = $('net-body');
     if (!tbody) return;
     var cols = 6;
-    if (renderLoadedState(tbody, 'networks', cols, function () { loadNetworks(); })) {
-      setCount('net-count', 0, '个');
-      return;
-    }
+    if (renderLoadedState(tbody, 'networks', cols, function () { loadNetworks(); })) { setCount('net-count', 0, '个'); return; }
     setCount('net-count', state.networks.length, '个');
     if (!state.networks.length) {
-      setChildren(tbody, [stateRow(cols, 'empty', {
-        title: '没有网络',
-        message: '在上方填写名称后点「创建网络」。',
-        retry: function () { loadNetworks(); }
-      })]);
+      setChildren(tbody, [stateRow(cols, 'empty', { title: '没有网络', message: '在上方填写名称后点「创建网络」。', retry: function () { loadNetworks(); } })]);
       return;
     }
     var frag = document.createDocumentFragment();
@@ -2471,27 +2118,15 @@
       var name = n.Name || '';
       var containers = (n.Containers || []).length;
       frag.appendChild(h('tr', { tabindex: '0', dataset: { ref: name }, title: '按 Enter 查看详情' },
-        h('td', { class: 'mono', title: name, text: name || '—' }),
-        h('td', { class: 'mono muted', title: n.ID || '', text: shortId(n.ID, 12) }),
-        h('td', { text: n.Driver || '—' }),
-        h('td', {},
-          h('span', { class: 'badge badge-muted', title: String(n.Scope || ''), text: n.Scope || '—' })
-        ),
-        h('td', { class: 'muted nowrap', title: n.CreatedAt || '', text: n.CreatedAt || '—' }),
-        h('td', { class: 'col-actions' },
-          h('div', { class: 'cell-actions' },
-            h('button', {
-              class: 'btn btn-row', type: 'button', title: '查看网络 ' + name + ' 详情（' + containers + ' 个容器）',
-              'aria-label': '查看网络 ' + name + ' 详情', text: '详情',
-              onclick: function () { showTextModal('网络详情 · ' + name, JSON.stringify(n, null, 2)); }
-            }),
-            h('button', {
-              class: 'btn btn-row is-danger', type: 'button', title: '删除网络 ' + name + '（需确认）',
-              'aria-label': '删除网络 ' + name, text: '删除',
-              onclick: function () { removeNetwork(name); }
-            })
-          )
-        )
+        cell(name, { cls: 'font-monospace' }),
+        h('td', { class: 'font-monospace small text-secondary', title: n.ID || '', text: shortId(n.ID, 12) }),
+        cell(n.Driver, { cls: '' }),
+        h('td', {}, h('span', { class: 'badge rounded-pill text-bg-secondary', title: String(n.Scope || ''), text: n.Scope || '—' })),
+        cell(n.CreatedAt, { cls: 'small text-secondary' }),
+        h('td', {}, h('div', { class: 'd-flex gap-1 flex-wrap' },
+          btn('详情', { title: '查看网络 ' + name + ' 详情（' + containers + ' 个容器）', ariaLabel: '查看网络 ' + name + ' 详情', onclick: function () { showTextModal('网络详情 · ' + name, JSON.stringify(n, null, 2)); } }),
+          btn('删除', { variant: 'btn-outline-danger', title: '删除网络 ' + name + '（需确认）', ariaLabel: '删除网络 ' + name, onclick: function () { removeNetwork(name); } })
+        ))
       ));
     });
     setChildren(tbody, [frag]);
@@ -2506,27 +2141,15 @@
     var subnet = (($('net-subnet') || {}).value || '').trim();
     var gateway = (($('net-gateway') || {}).value || '').trim();
     var internal = !!($('net-internal') && $('net-internal').checked);
-    try {
-      var out = await invoke('CreateNetwork', name, driver, subnet, gateway, internal);
-      toast('success', '已创建网络：' + name, String(out || '').trim().slice(0, 200));
-      if (nameEl) nameEl.value = '';
-      await loadNetworks();
-    } catch (e) { fail('CreateNetwork', e); }
+    try { var out = await invoke('CreateNetwork', name, driver, subnet, gateway, internal); toast('success', '已创建网络：' + name, String(out || '').trim().slice(0, 200)); if (nameEl) nameEl.value = ''; await loadNetworks(); }
+    catch (e) { fail('CreateNetwork', e); }
   }
 
   async function removeNetwork(name) {
-    var r = await confirmDialog({
-      title: '删除网络',
-      message: '将删除网络「' + name + '」。仍连接到该网络的容器会导致删除失败。',
-      detail: 'RemoveNetwork(name=' + name + ')',
-      confirmLabel: '删除网络',
-      danger: true
-    });
+    var r = await confirmDialog({ title: '删除网络', message: '将删除网络「' + name + '」。仍连接到该网络的容器会导致删除失败。', detail: 'RemoveNetwork(name=' + name + ')', confirmLabel: '删除网络', danger: true });
     if (!r.confirmed) return;
-    try {
-      var out = await invoke('RemoveNetwork', name, false);
-      toast('success', '已删除网络：' + name, String(out || '').trim().slice(0, 200));
-    } catch (e) { fail('RemoveNetwork', e); }
+    try { var out = await invoke('RemoveNetwork', name, false); toast('success', '已删除网络：' + name, String(out || '').trim().slice(0, 200)); }
+    catch (e) { fail('RemoveNetwork', e); }
     await loadNetworks();
   }
 
@@ -2534,23 +2157,11 @@
 
   async function loadEnv() {
     var key = 'env';
-    state.loading[key] = true;
-    state.error[key] = null;
+    state.loading[key] = true; state.error[key] = null;
     renderEnv();
-    try {
-      var env = await invoke('EnvCheck');
-      applyEnv(env);
-      state.loaded[key] = true;
-      state.loadedAt[key] = Date.now();
-      touchLast();
-    } catch (e) {
-      state.error[key] = normalizeError(e);
-      fail('EnvCheck', e, { showDetail: false });
-    } finally {
-      state.loading[key] = false;
-      renderEnv();
-      updateStatusLine();
-    }
+    try { var env = await invoke('EnvCheck'); applyEnv(env); state.loaded[key] = true; state.loadedAt[key] = Date.now(); touchLast(); }
+    catch (e) { state.error[key] = normalizeError(e); fail('EnvCheck', e, { showDetail: false }); }
+    finally { state.loading[key] = false; renderEnv(); updateStatusLine(); }
   }
 
   function applyEnv(env) {
@@ -2564,8 +2175,8 @@
     var v = value;
     var isEmpty = v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length);
     return [
-      h('dt', { text: label }),
-      h('dd', { class: isEmpty ? 'empty' : '', text: isEmpty ? (emptyText || '（空）') : String(v) })
+      h('dt', { class: 'col-5 text-secondary', text: label }),
+      h('dd', { class: 'col-7' + (isEmpty ? ' text-secondary' : ''), text: isEmpty ? (emptyText || '（空）') : String(v) })
     ];
   }
 
@@ -2574,34 +2185,25 @@
     if (!root) return;
 
     if (state.loading.env && !state.env) {
-      setChildren(root, [h('div', { class: 'state' },
-        h('span', { class: 'spinner', 'aria-hidden': 'true' }),
-        h('span', { class: 'state-title', text: '正在执行环境自检…' })
-      )]);
+      setChildren(root, [h('div', { class: 'd-flex align-items-center gap-2 text-secondary py-4' },
+        h('span', { class: 'spinner-border spinner-border-sm', 'aria-hidden': 'true' }),
+        h('span', { text: '正在执行环境自检…' }))]);
       return;
     }
-
     if (state.error.env && !state.env) {
       var e = state.error.env;
-      setChildren(root, [h('div', { class: 'state' },
-        h('span', { class: 'state-icon', text: '⛔' }),
-        h('span', { class: 'state-title', text: '环境自检失败' }),
-        h('div', { class: 'state-msg', text: e.message }),
-        e.detail ? h('pre', { class: 'state-detail', text: e.detail }) : null,
-        h('div', { class: 'state-actions' },
-          h('button', { class: 'btn', type: 'button', title: '重试', 'aria-label': '重试环境自检', text: '重试', onclick: loadEnv })
-        )
+      setChildren(root, [h('div', { class: 'alert alert-danger d-flex flex-column gap-1' },
+        h('div', { class: 'fw-semibold', text: '环境自检失败' }),
+        h('div', { class: 'small', text: e.message }),
+        e.detail ? h('pre', { class: 'bg-body-tertiary border rounded p-2 small mb-0', text: e.detail }) : null,
+        btn('重试', { extraClass: 'align-self-start', onclick: loadEnv })
       )]);
       return;
     }
-
     if (!state.env) {
-      setChildren(root, [h('div', { class: 'state' },
-        h('span', { class: 'state-icon', text: 'ℹ' }),
-        h('span', { class: 'state-title', text: '尚未自检' }),
-        h('div', { class: 'state-actions' },
-          h('button', { class: 'btn', type: 'button', title: '开始自检', 'aria-label': '开始环境自检', text: '开始自检', onclick: loadEnv })
-        )
+      setChildren(root, [h('div', { class: 'alert alert-secondary d-flex flex-column gap-1' },
+        h('div', { class: 'fw-semibold', text: '尚未自检' }),
+        btn('开始自检', { variant: 'btn-primary', extraClass: 'align-self-start', onclick: loadEnv })
       )]);
       return;
     }
@@ -2611,15 +2213,14 @@
     var sessions = Array.isArray(env.Sessions) ? env.Sessions : [];
     var nodes = [];
 
-    /* 顶部结论卡 */
     var ready = env.ServiceReady === true;
-    nodes.push(h('div', { class: 'card' + (ready ? '' : ' card-problem') },
-      h('div', { class: 'card-head' },
-        h('span', { class: 'dot dot-' + (ready ? 'running' : 'error'), 'aria-hidden': 'true' }),
+    nodes.push(h('div', { class: 'card mb-3 border-' + (ready ? 'success' : 'danger') },
+      h('div', { class: 'card-header d-flex align-items-center gap-2' },
+        h('span', { class: 'd-inline-block rounded-circle bg-' + (ready ? 'success' : 'danger'), style: 'width:10px;height:10px;', 'aria-hidden': 'true' }),
         h('span', { text: ready ? '容器功能可用（ServiceReady = true）' : '容器功能不可用（ServiceReady = false）' })
       ),
       h('div', { class: 'card-body' },
-        h('dl', { class: 'kv' },
+        h('dl', { class: 'row small mb-0' },
           kvRow('可用性 (Available)', env.Available === true ? 'true' : 'false'),
           kvRow('服务就绪 (ServiceReady)', ready ? 'true' : 'false'),
           kvRow('wslc 路径 (WslcPath)', env.WslcPath),
@@ -2633,71 +2234,47 @@
       )
     ));
 
-    /* Problems 卡 —— ServiceReady=false 时必须显著 */
     if (problems.length) {
-      nodes.push(h('div', { class: 'card card-problem' },
-        h('div', { class: 'card-head' },
-          h('span', { 'aria-hidden': 'true', text: '⛔' }),
-          h('span', { text: 'Problems（' + problems.length + '）' })
-        ),
-        h('div', { class: 'card-body' },
-          h('ul', { class: 'problem-list' }, problems.map(function (p) {
-            return h('li', { text: String(p) });
-          }))
-        )
+      nodes.push(h('div', { class: 'card mb-3 border-danger' },
+        h('div', { class: 'card-header fw-semibold', text: 'Problems（' + problems.length + '）' }),
+        h('div', { class: 'card-body' }, h('ul', { class: 'mb-0 ps-3 small' }, problems.map(function (p) { return h('li', { text: String(p) }); })))
       ));
     }
 
     if (!ready || problems.length) {
-      nodes.push(h('div', { class: 'fix-hint' },
-        h('strong', { text: '修复建议（hypervisor 计算服务未运行 → HCS_E_SERVICE_NOT_AVAILABLE / 0x80370114）' }),
-        h('ol', {},
-          h('li', { text: '以管理员身份打开 PowerShell（开始菜单右键 → 终端(管理员)）。' }),
-          h('li', {}, '把服务启动类型从 Disabled 改回手动（Disabled 是真正的故障点）： ',
-            h('code', { text: 'Set-Service -Name vmcompute -StartupType Manual' })),
-          h('li', {}, '启动服务：', h('code', { text: 'Start-Service vmcompute' })),
-          h('li', {}, '确认状态为 Running：', h('code', { text: 'Get-Service vmcompute' })),
-          h('li', {}, '若仍不行：确认可选功能 VirtualMachinePlatform 已启用（',
-            h('code', { text: 'Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart' }),
-            '，必要时重启），并检查 ', h('code', { text: 'bcdedit /enum | findstr hypervisorlaunchtype' }),
-            ' 应为 Auto。'),
-          h('li', { text: '不需要安装 WSL 发行版，也不需要 Containers / 完整 Hyper-V 角色。' }),
-          h('li', { text: '回到本页点「重新自检」；若仍不可用，确认 wslc 已安装且 Available = true。' }),
-          h('li', {}, '若 WslcPath 为空，可设置环境变量 ', h('code', { text: 'WSLC_PATH' }),
-            ' 指向 wslc.exe（默认 C:\\Program Files\\WSL\\wslc.exe）后重启本应用。')
+      nodes.push(h('div', { class: 'card mb-3 border-warning' },
+        h('div', { class: 'card-header fw-semibold', text: '修复建议（hypervisor 计算服务未运行 → HCS_E_SERVICE_NOT_AVAILABLE / 0x80370114）' }),
+        h('div', { class: 'card-body small' },
+          h('ol', { class: 'ps-3 mb-0' },
+            h('li', { text: '以管理员身份打开 PowerShell（开始菜单右键 → 终端(管理员)）。' }),
+            h('li', {}, '把服务启动类型从 Disabled 改回手动（Disabled 是真正的故障点）： ', h('code', { class: 'font-monospace', text: 'Set-Service -Name vmcompute -StartupType Manual' })),
+            h('li', {}, '启动服务：', h('code', { class: 'font-monospace', text: 'Start-Service vmcompute' })),
+            h('li', {}, '确认状态为 Running：', h('code', { class: 'font-monospace', text: 'Get-Service vmcompute' })),
+            h('li', {}, '若仍不行：确认可选功能 VirtualMachinePlatform 已启用（', h('code', { class: 'font-monospace', text: 'Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart' }), '，必要时重启），并检查 ', h('code', { class: 'font-monospace', text: 'bcdedit /enum | findstr hypervisorlaunchtype' }), ' 应为 Auto。'),
+            h('li', { text: '不需要安装 WSL 发行版，也不需要 Containers / 完整 Hyper-V 角色。' }),
+            h('li', { text: '回到本页点「重新自检」；若仍不可用，确认 wslc 已安装且 Available = true。' }),
+            h('li', {}, '若 WslcPath 为空，可设置环境变量 ', h('code', { class: 'font-monospace', text: 'WSLC_PATH' }), ' 指向 wslc.exe（默认 C:\\Program Files\\WSL\\wslc.exe）后重启本应用。')
+          )
         )
       ));
     }
 
-    /* Sessions */
-    nodes.push(h('div', { class: 'card' },
-      h('div', { class: 'card-head' }, h('span', { text: 'Sessions（' + sessions.length + '）' })),
+    nodes.push(h('div', { class: 'card mb-3' },
+      h('div', { class: 'card-header fw-semibold', text: 'Sessions（' + sessions.length + '）' }),
       h('div', { class: 'card-body' },
         sessions.length
-          ? h('table', { class: 'sessions' },
-            h('thead', {}, h('tr', {},
-              h('th', { scope: 'col', text: 'ID' }),
-              h('th', { scope: 'col', text: 'Name' }),
-              h('th', { scope: 'col', text: 'CreatorPid' })
-            )),
+          ? h('table', { class: 'table table-sm small mb-0' },
+            h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'ID' }), h('th', { scope: 'col', text: 'Name' }), h('th', { scope: 'col', text: 'CreatorPid' }))),
             h('tbody', {}, sessions.map(function (s) {
-              return h('tr', {},
-                h('td', { text: s.ID === undefined || s.ID === null ? '—' : String(s.ID) }),
-                h('td', { text: s.Name || '—' }),
-                h('td', { text: s.CreatorPid === undefined || s.CreatorPid === null ? '—' : String(s.CreatorPid) })
-              );
-            }))
-          )
-          : h('div', { class: 'faint', text: '没有活动会话。' })
+              return h('tr', {}, h('td', { text: s.ID === undefined || s.ID === null ? '—' : String(s.ID) }), h('td', { text: s.Name || '—' }), h('td', { text: s.CreatorPid === undefined || s.CreatorPid === null ? '—' : String(s.CreatorPid) }));
+            })))
+          : h('div', { class: 'text-secondary small', text: '没有活动会话。' })
       )
     ));
 
-    /* 原始 JSON，便于排查 */
-    nodes.push(h('details', { class: 'panel' },
-      h('summary', { title: '查看 EnvStatus 原始 JSON' }, '原始 JSON（EnvStatus）'),
-      h('div', { class: 'card-body' },
-        h('pre', { class: 'modal-detail', text: JSON.stringify(env, null, 2) })
-      )
+    nodes.push(h('details', { class: 'mb-3' },
+      h('summary', { class: 'small', title: '查看 EnvStatus 原始 JSON' }, '原始 JSON（EnvStatus）'),
+      h('div', {}, h('pre', { class: 'bg-body-tertiary border rounded p-2 small', text: JSON.stringify(env, null, 2) }))
     ));
 
     setChildren(root, nodes);
@@ -2707,18 +2284,13 @@
 
   async function loadSettings() {
     var key = 'settings';
-    state.loading[key] = true;
-    state.error[key] = null;
+    state.loading[key] = true; state.error[key] = null;
     if (currentPanel() === 'settings') renderSettings();
     try {
       var data = await invoke('LoadSettings');
       state.settings = data || null;
-      state.loaded[key] = true;
-      state.loadedAt[key] = Date.now();
-      /* 常用镜像预设写入完成后刷新镜像页的下拉，让"常用镜像"配置即时可见 */
-      if (state.settings && state.settings.PresetImages) {
-        fillPullPresets($('img-pull-presets'));
-      }
+      state.loaded[key] = true; state.loadedAt[key] = Date.now();
+      if (state.settings && state.settings.PresetImages) fillPullPresets($('img-pull-presets'));
       touchLast();
     } catch (e) {
       state.error[key] = normalizeError(e);
@@ -2735,28 +2307,18 @@
     if (!state.settings) return;
     var payload = readSettingsForm();
     var key = 'settings';
-    state.loading[key] = true;
-    state.error[key] = null;
+    state.loading[key] = true; state.error[key] = null;
     renderSettings();
     try {
       var saved = await invoke('SaveSettings', payload);
       state.settings = saved || payload;
-      state.loaded[key] = true;
-      state.loadedAt[key] = Date.now();
-      if (state.settings && state.settings.PresetImages) {
-        fillPullPresets($('img-pull-presets'));
-      }
+      state.loaded[key] = true; state.loadedAt[key] = Date.now();
+      if (state.settings && state.settings.PresetImages) fillPullPresets($('img-pull-presets'));
       setStatus('设置已保存');
       touchLast();
       markSettingsClean();
-    } catch (e) {
-      state.error[key] = normalizeError(e);
-      fail('SaveSettings', e, { showDetail: true });
-    } finally {
-      state.loading[key] = false;
-      if (currentPanel() === 'settings') renderSettings();
-      updateStatusLine();
-    }
+    } catch (e) { state.error[key] = normalizeError(e); fail('SaveSettings', e, { showDetail: true }); }
+    finally { state.loading[key] = false; if (currentPanel() === 'settings') renderSettings(); updateStatusLine(); }
   }
 
   function readSettingsForm() {
@@ -2770,25 +2332,19 @@
     };
     var custom = [];
     var customEl = $('set-custom-mirrors');
-    if (customEl) {
-      custom = customEl.value.split(/\s+/).map(function (s) { return s.trim(); }).filter(Boolean);
-    }
-    /* 常用镜像预设从页面上的 preset-row 表单读取（label + ref 两个 input） */    var presets = [];
-    var presetRows = document.querySelectorAll('#settings-content .preset-row');
-    if (presetRows.length) {
-      presetRows.forEach(function (row) {
-        var labelEl = row.querySelector('.preset-label');
-        var refEl = row.querySelector('.preset-ref');
-        if (!labelEl || !refEl) return;
-        var ref = (refEl.value || '').trim();
-        if (!ref) return;
-        var label = (labelEl.value || '').trim() || ref;
-        presets.push({ Label: label, Ref: ref });
-      });
-    } else if (state.settings && state.settings.PresetImages) {
-      presets = state.settings.PresetImages.map(function (p) {
-        return { Label: p.Label || p.Ref, Ref: p.Ref };
-      });
+    if (customEl) custom = customEl.value.split(/\s+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    var presets = [];
+    var presetRefs = document.querySelectorAll('#settings-content [data-role="preset-ref"]');
+    presetRefs.forEach(function (refEl) {
+      var row = refEl.closest('[data-idx]');
+      var labelEl = row ? row.querySelector('[data-role="preset-label"]') : null;
+      var ref = (refEl.value || '').trim();
+      if (!ref) return;
+      var label = labelEl ? (labelEl.value || '').trim() : ref;
+      presets.push({ Label: label, Ref: ref });
+    });
+    if (!presets.length && state.settings && state.settings.PresetImages) {
+      presets = state.settings.PresetImages.map(function (p) { return { Label: p.Label || p.Ref, Ref: p.Ref }; });
     }
     return {
       MirrorEnabled: pickBool('set-mirror-enabled', 'MirrorEnabled'),
@@ -2802,78 +2358,45 @@
     if (!endpoint) return;
     state.settingsProbe[endpoint] = { busy: true };
     if (currentPanel() === 'settings') renderSettings();
-    try {
-      var probe = await invoke('TestMirror', endpoint);
-      state.settingsProbe[endpoint] = probe || { OK: false, Message: '无结果' };
-    } catch (e) {
-      state.settingsProbe[endpoint] = { OK: false, Message: normalizeError(e).message || String(e) };
-    }
+    try { var probe = await invoke('TestMirror', endpoint); state.settingsProbe[endpoint] = probe || { OK: false, Message: '无结果' }; }
+    catch (e) { state.settingsProbe[endpoint] = { OK: false, Message: normalizeError(e).message || String(e) }; }
     if (currentPanel() === 'settings') renderSettings();
   }
 
-  /* 状态胶囊（Currently Active / Normal / Off） */
   function statusPill(cls, text) {
-    return h('span', { class: 'status-pill ' + (cls || ''), title: text }, text);
+    var variant = cls === 'active' ? 'success' : cls === 'busy' ? 'warning' : cls === 'off' ? 'secondary' : 'secondary';
+    return h('span', { class: 'badge rounded-pill text-bg-' + variant, text: text });
   }
 
-  /* 内联探测结果（小胶囊，替代原来的 .probe 块） */
-  function probeInline(probe, label) {
-    if (!probe) return null;
-    if (probe.busy) return h('span', { class: 'status-pill busy', title: label }, '探测中…');
-    if (probe.OK) return h('span', { class: 'status-pill active', title: label + '：' + (probe.Message || '成功') },
-      '✓ ' + probe.DurationMS + 'ms');
-    return h('span', { class: 'status-pill off', title: label + '：' + (probe.Message || '失败'),
-      style: 'color:var(--danger); border-color:var(--danger);' },
-      '✗ ' + (probe.Message || '失败'));
-  }
-
-  /* 镜像源卡片：点击激活；带顶部渐变条、badge、状态胶囊、探测按钮 */
   function mirrorCard(m) {
     var isActive = m === (state.settings && state.settings.MirrorEndpoint);
     var probe = state.settingsProbe[m];
-    var badge = m.charAt(0).toUpperCase();
     var label = mirrorLabel(m) || m;
     var note = mirrorNote(m) || '';
     return h('div', {
-      class: 'mirror-card' + (isActive ? ' is-active' : ''),
-      role: 'button',
-      tabindex: '0',
-      'aria-pressed': isActive ? 'true' : 'false',
-      'aria-label': '选择镜像源 ' + m,
+      class: 'card h-100' + (isActive ? ' border-primary border-2' : ''),
+      role: 'button', tabindex: '0', 'aria-pressed': isActive ? 'true' : 'false', 'aria-label': '选择镜像源 ' + m,
       title: '点击激活 ' + m,
       onclick: function () { activateMirror(m); },
-      onkeydown: function (ev) {
-        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activateMirror(m); }
-      }
+      onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activateMirror(m); } }
     },
-      h('div', { class: 'mirror-card-head' },
-        h('span', { class: 'badge', 'aria-hidden': 'true', text: badge }),
-        h('div', { style: 'min-width:0; flex:1;' },
-          h('div', { class: 'mirror-card-label', text: label }),
-          h('div', { class: 'mirror-card-endpoint mono', text: m })
-        ),
+      h('div', { class: 'card-header d-flex align-items-center gap-2' },
+        h('span', { class: 'badge rounded-pill text-bg-secondary', 'aria-hidden': 'true', text: m.charAt(0).toUpperCase() }),
+        h('div', { class: 'flex-grow-1', style: 'min-width:0' }, h('div', { class: 'text-truncate', text: label }), h('div', { class: 'small text-secondary font-monospace text-truncate', text: m })),
         isActive ? statusPill('active', 'Currently Active') : statusPill('off', 'Normal')
       ),
-      note ? h('div', { class: 'mirror-card-note', text: note }) : null,
-      h('div', { class: 'mirror-card-actions' },
-        h('button', {
-          class: 'btn btn-sm',
-          type: 'button',
-          text: (probe && probe.busy) ? '探测中…' : '⚡ 测试',
-          disabled: (probe && probe.busy) ? 'disabled' : undefined,
-          title: '以 hello-world:latest 探测此镜像源（约 10–30 秒）',
-          onclick: function (ev) { ev.stopPropagation(); testMirror(m); }
-        }),
-        h('span', { class: 'spacer' }),
-        (probe && probe.busy) ? h('span', { class: 'probe-inline busy', text: '探测中…' })
-          : (probe && probe.OK) ? h('span', { class: 'probe-inline ok', text: '✓ ' + probe.DurationMS + 'ms' })
-          : (probe && !probe.OK) ? h('span', { class: 'probe-inline fail', text: '✗ ' + (probe.Message || '失败') })
+      note ? h('div', { class: 'card-body small text-secondary pt-2', text: note }) : null,
+      h('div', { class: 'card-footer d-flex align-items-center gap-2 bg-transparent' },
+        btn((probe && probe.busy) ? '探测中…' : [h('i', { class: 'bi bi-lightning-charge', 'aria-hidden': 'true' }), ' 测试'], { disabled: (probe && probe.busy) ? 'disabled' : undefined, title: '以 hello-world:latest 探测此镜像源（约 10–30 秒）', onclick: function (ev) { ev.stopPropagation(); testMirror(m); } }),
+        h('span', { class: 'flex-grow-1' }),
+        (probe && probe.busy) ? h('span', { class: 'small text-secondary', text: '探测中…' })
+          : (probe && probe.OK) ? h('span', { class: 'small text-success' }, h('i', { class: 'bi bi-check-circle-fill', 'aria-hidden': 'true' }), ' ' + probe.DurationMS + 'ms')
+          : (probe && !probe.OK) ? h('span', { class: 'small text-danger' }, h('i', { class: 'bi bi-x-circle', 'aria-hidden': 'true' }), ' ' + (probe.Message || '失败'))
           : null
       )
     );
   }
 
-  /* 激活某个镜像源（修改本地 state，保存由用户点击「保存」触发） */
   function activateMirror(endpoint) {
     if (!state.settings) return;
     state.settings.MirrorEndpoint = endpoint;
@@ -2882,16 +2405,8 @@
     setStatus('已选择镜像源 ' + endpoint + '（点击「保存」生效）');
   }
 
-  /* 常用镜像预设编辑：增 / 删 / 上移 */
-  function addPresetRow() {
-    state._pendingPreset = { Label: '', Ref: '' };
-    if (currentPanel() === 'settings') renderSettings();
-  }
-  function removePresetRow(idx) {
-    if (!state.settings || !state.settings.PresetImages) return;
-    state.settings.PresetImages.splice(idx, 1);
-    renderSettings();
-  }
+  function addPresetRow() { state._pendingPreset = { Label: '', Ref: '' }; if (currentPanel() === 'settings') renderSettings(); }
+  function removePresetRow(idx) { if (!state.settings || !state.settings.PresetImages) return; state.settings.PresetImages.splice(idx, 1); renderSettings(); }
   function movePresetRow(idx, delta) {
     if (!state.settings || !state.settings.PresetImages) return;
     var to = idx + delta;
@@ -2901,93 +2416,50 @@
     renderSettings();
   }
 
-  /* 常用镜像预设：拉取下拉和设置页共用。默认值来自后端 DefaultPresetImages，
-     前端这份兜底表用于 settings 未加载时展示。 */
   var DEFAULT_PRESET_IMAGES = [
-    ['MySQL 8.4',            'mysql:8.4'],
-    ['Oracle XE 23ai',       'gvenzl/oracle-xe:23'],
-    ['PostgreSQL 17',        'postgres:17'],
-    ['Redis 7',              'redis:7'],
-    ['Nacos v2.5.1',         'nacos/nacos-server:v2.5.1'],
-    ['MariaDB 11',           'mariadb:11'],
-    ['MongoDB 8',            'mongo:8'],
-    ['Kafka 7.8',            'confluentinc/cp-kafka:7.8.0'],
-    ['Zookeeper 3.9',        'zookeeper:3.9'],
-    ['Schema Registry',      'confluentinc/cp-schema-registry:7.8.0'],
-    ['Elasticsearch 8.17',   'elasticsearch:8.17.0'],
-    ['Kibana 8.17',          'kibana:8.17.0'],
-    ['OpenSearch 2.18',      'opensearchproject/opensearch:2.18'],
-    ['MinIO',                'minio/minio:latest'],
-    ['Jenkins LTS',          'jenkins/jenkins:lts'],
-    ['Harbor',               'goharbor/harbor:latest'],
-    ['Nginx 1.27',           'nginx:1.27'],
-    ['Node.js 22',           'node:22'],
-    ['Python 3.12',          'python:3.12'],
-    ['Golang 1.23',          'golang:1.23'],
-    ['Temurin 21 JDK',       'eclipse-temurin:21-jdk'],
-    ['Consul 1.19',          'hashicorp/consul:1.19'],
-    ['etcd 3.5',             'bitnami/etcd:3.5'],
-    ['RabbitMQ 3.13',        'rabbitmq:3.13'],
-    ['Airflow 2.10',         'apache/airflow:2.10'],
-    ['Grafana 11',           'grafana/grafana:11'],
-    ['Prometheus',           'prom/prometheus:v2.53.0'],
-    ['Apache Doris 2.1',     'apache/doris:2.1.0'],
-    ['ClickHouse',           'clickhouse/clickhouse-server:24'],
-    ['TiDB 8.1',             'pingcap/tidb:8.1']
+    ['MySQL 8.4', 'mysql:8.4'], ['Oracle XE 23ai', 'gvenzl/oracle-xe:23'], ['PostgreSQL 17', 'postgres:17'],
+    ['Redis 7', 'redis:7'], ['Nacos v2.5.1', 'nacos/nacos-server:v2.5.1'], ['MariaDB 11', 'mariadb:11'],
+    ['MongoDB 8', 'mongo:8'], ['Kafka 7.8', 'confluentinc/cp-kafka:7.8.0'], ['Zookeeper 3.9', 'zookeeper:3.9'],
+    ['Schema Registry', 'confluentinc/cp-schema-registry:7.8.0'], ['Elasticsearch 8.17', 'elasticsearch:8.17.0'],
+    ['Kibana 8.17', 'kibana:8.17.0'], ['OpenSearch 2.18', 'opensearchproject/opensearch:2.18'], ['MinIO', 'minio/minio:latest'],
+    ['Jenkins LTS', 'jenkins/jenkins:lts'], ['Harbor', 'goharbor/harbor:latest'], ['Nginx 1.27', 'nginx:1.27'],
+    ['Node.js 22', 'node:22'], ['Python 3.12', 'python:3.12'], ['Golang 1.23', 'golang:1.23'],
+    ['Temurin 21 JDK', 'eclipse-temurin:21-jdk'], ['Consul 1.19', 'hashicorp/consul:1.19'], ['etcd 3.5', 'bitnami/etcd:3.5'],
+    ['RabbitMQ 3.13', 'rabbitmq:3.13'], ['Airflow 2.10', 'apache/airflow:2.10'], ['Grafana 11', 'grafana/grafana:11'],
+    ['Prometheus', 'prom/prometheus:v2.53.0'], ['Apache Doris 2.1', 'apache/doris:2.1.0'], ['ClickHouse', 'clickhouse/clickhouse-server:24'],
+    ['TiDB 8.1', 'pingcap/tidb:8.1']
   ];
 
-  /* 镜像源的标签和说明（用于卡片墙的 badge 名和 note）。后端 settings.go 的
-     DefaultMirrors 是权威版本；这里给 UI 一个兜底展示。 */
   var MIRROR_LABELS = {
-    'docker.io': 'Docker Hub 官方',
-    'docker.m.daocloud.io': 'DaoCloud（默认）',
-    'docker.xuanyuan.me': '幻象网络',
-    'docker.1panel.live': '1Panel',
-    'dockerhub.timeweb.cloud': 'Timeweb',
-    'dockerproxy.com': 'dockerproxy',
-    'docker.mirrors.ustc.edu.cn': '中科大',
-    'hub-mirror.c.163.com': '网易',
-    'mirror.bjtu.edu.cn': '北交大',
-    'docker.nju.edu.cn': '南京大学',
-    'mirror.qiniu.com': '七牛'
+    'docker.io': 'Docker Hub 官方', 'docker.m.daocloud.io': 'DaoCloud（默认）', 'docker.xuanyuan.me': '幻象网络',
+    'docker.1panel.live': '1Panel', 'dockerhub.timeweb.cloud': 'Timeweb', 'dockerproxy.com': 'dockerproxy',
+    'docker.mirrors.ustc.edu.cn': '中科大', 'hub-mirror.c.163.com': '网易', 'mirror.bjtu.edu.cn': '北交大',
+    'docker.nju.edu.cn': '南京大学', 'mirror.qiniu.com': '七牛'
   };
   var MIRROR_NOTES = {
-    'docker.io': '国内通常直连超时（实测 15s 超时），需配合代理',
-    'docker.m.daocloud.io': '实测最快，3.2s 拉取 hello-world',
-    'docker.xuanyuan.me': '实测可用，5.3s',
-    'docker.1panel.live': '实测可用，9.1s',
-    'dockerhub.timeweb.cloud': '2026-10 实测超时，可用性不稳定',
-    'dockerproxy.com': '2026-10 实测超时，可用性不稳定',
-    'docker.mirrors.ustc.edu.cn': '高校镜像站，2024 起多次下线',
-    'hub-mirror.c.163.com': '已停止服务',
-    'mirror.bjtu.edu.cn': '已停止服务',
-    'docker.nju.edu.cn': '已停止服务',
-    'mirror.qiniu.com': '已停止服务'
+    'docker.io': '国内通常直连超时（实测 15s 超时），需配合代理', 'docker.m.daocloud.io': '实测最快，3.2s 拉取 hello-world',
+    'docker.xuanyuan.me': '实测可用，5.3s', 'docker.1panel.live': '实测可用，9.1s', 'dockerhub.timeweb.cloud': '2026-10 实测超时，可用性不稳定',
+    'dockerproxy.com': '2026-10 实测超时，可用性不稳定', 'docker.mirrors.ustc.edu.cn': '高校镜像站，2024 起多次下线',
+    'hub-mirror.c.163.com': '已停止服务', 'mirror.bjtu.edu.cn': '已停止服务', 'docker.nju.edu.cn': '已停止服务', 'mirror.qiniu.com': '已停止服务'
   };
   function mirrorLabel(endpoint) { return endpoint ? (MIRROR_LABELS[endpoint] || '') : ''; }
-  function mirrorNote(endpoint)  { return endpoint ? (MIRROR_NOTES[endpoint] || '') : ''; }
+  function mirrorNote(endpoint) { return endpoint ? (MIRROR_NOTES[endpoint] || '') : ''; }
 
   function renderSettings() {
     var root = $('settings-content');
     if (!root) return;
 
     if (state.loading.settings && !state.settings) {
-      setChildren(root, [h('div', { class: 'state' },
-        h('span', { class: 'spinner', 'aria-hidden': 'true' }),
-        h('span', { class: 'state-title', text: '正在加载设置…' })
-      )]);
+      setChildren(root, [h('div', { class: 'd-flex align-items-center gap-2 text-secondary py-4' },
+        h('span', { class: 'spinner-border spinner-border-sm', 'aria-hidden': 'true' }), h('span', { text: '正在加载设置…' }))]);
       return;
     }
     if (state.error.settings && !state.settings) {
       var e = state.error.settings;
-      setChildren(root, [h('div', { class: 'state' },
-        h('span', { class: 'state-icon', text: '⛔' }),
-        h('span', { class: 'state-title', text: '加载设置失败' }),
-        h('div', { class: 'state-msg', text: e.message }),
-        e.detail ? h('pre', { class: 'state-detail', text: e.detail }) : null,
-        h('div', { class: 'state-actions' },
-          h('button', { class: 'btn', type: 'button', text: '重试', onclick: loadSettings })
-        )
+      setChildren(root, [h('div', { class: 'alert alert-danger d-flex flex-column gap-1' },
+        h('div', { class: 'fw-semibold', text: '加载设置失败' }), h('div', { class: 'small', text: e.message }),
+        e.detail ? h('pre', { class: 'bg-body-tertiary border rounded p-2 small mb-0', text: e.detail }) : null,
+        btn('重试', { extraClass: 'align-self-start', onclick: loadSettings })
       )]);
       return;
     }
@@ -2996,168 +2468,76 @@
     var activeMirror = state.env && state.env.ActiveMirror ? state.env.ActiveMirror : (s.MirrorEnabled ? s.MirrorEndpoint : '');
     var nodes = [];
 
-    /* 说明卡：wslc 不支持 registry mirror 配置项。
-       做成可折叠的 details，避免每次打开设置页都堆一大堆文字。 */
-    nodes.push(h('details', { class: 'card card-hint hint-compact', open: false },
-      h('summary', { class: 'card-head', style: 'padding:10px 16px;' },
-        h('span', { class: 'head-icon', 'aria-hidden': 'true', text: 'ℹ️' }),
-        h('span', { text: 'wslc 3.x 无 registry mirror 配置项，本工具通过镜像名改写弥补' }),
-        h('span', { class: 'spacer' }),
-        h('span', { class: 'faint', style: 'font-size:var(--fs-xs);', text: '点击展开详情' })
-      ),
-      h('div', { class: 'card-body', style: 'padding-top:0;' },
-        h('p', { class: 'hint-text', style: 'margin:0;' },
-          h('strong', { text: '镜像源改写' }),
-          h('span', { text: '：输入 ' }), h('code', { text: 'alpine:3.20' }),
-          h('span', { text: ' → 实际执行 ' }), h('code', { text: 'wslc image pull <mirror>/library/alpine:3.20' })
-        ),
-        h('p', { class: 'hint-text', style: 'margin:8px 0 0;' },
-          h('strong', { text: '测试拉取' }),
-          h('span', { text: '：镜像站的「测试」用 ' }), h('code', { text: 'wslc image pull <mirror>/library/hello-world:latest' }),
-          h('span', { text: ' 探测；失败常见原因是镜像站不可达或该仓库不存在。' })
-        )
+    nodes.push(h('details', { class: 'card mb-3' },
+      h('summary', { class: 'card-header small', title: 'wslc 3.x 无 registry mirror 配置项，本工具通过镜像名改写弥补' }, 'wslc 3.x 无 registry mirror 配置项，本工具通过镜像名改写弥补'),
+      h('div', { class: 'card-body small' },
+        h('p', { class: 'mb-1' }, h('strong', { text: '镜像源改写' }), '：输入 ', h('code', { class: 'font-monospace', text: 'alpine:3.20' }), ' → 实际执行 ', h('code', { class: 'font-monospace', text: 'wslc image pull <mirror>/library/alpine:3.20' })),
+        h('p', { class: 'mb-0' }, h('strong', { text: '测试拉取' }), '：镜像站的「测试」用 ', h('code', { class: 'font-monospace', text: 'wslc image pull <mirror>/library/hello-world:latest' }), ' 探测。')
       )
     ));
 
-    /* ============ 镜像源区块（卡片墙）============ */
     var mirrors = s.CustomMirrors && s.CustomMirrors.length ? s.CustomMirrors : [];
     var mirrorEnabled = s.MirrorEnabled !== false;
-    nodes.push(h('div', { class: 'section' },
-      h('div', { class: 'section-head' },
-        h('span', { class: 'head-icon', 'aria-hidden': 'true', text: '🛰' }),
-        h('div', { style: 'flex:1; min-width:0;' },
-          h('div', { class: 'section-title' }, '镜像源'),
-          h('div', { class: 'section-desc', text: '改写镜像名拉取；点击卡片激活，无需重启。' })
-        ),
-        h('label', { class: 'switch' },
-          h('input', {
-            type: 'checkbox',
-            id: 'set-mirror-enabled',
-            checked: (mirrorEnabled ? 'checked' : undefined),
-            onchange: function (ev) {
-              if (!state.settings) return;
-              state.settings.MirrorEnabled = ev.target.checked;
-              renderSettings();
-            }
-          }),
-          h('span', { class: 'track' }),
-          h('span', { class: 'switch-label', text: '镜像改写' })
+    nodes.push(h('div', { class: 'card mb-3' },
+      h('div', { class: 'card-header d-flex align-items-center gap-2' },
+        h('div', { class: 'flex-grow-1' }, h('div', { class: 'fw-semibold', text: '镜像源' }), h('div', { class: 'small text-secondary', text: '改写镜像名拉取；点击卡片激活，无需重启。' })),
+        h('div', { class: 'form-check form-switch mb-0' },
+          h('input', { class: 'form-check-input', type: 'checkbox', id: 'set-mirror-enabled', checked: (mirrorEnabled ? 'checked' : undefined), onchange: function (ev) { if (!state.settings) return; state.settings.MirrorEnabled = ev.target.checked; renderSettings(); } }),
+          h('label', { class: 'form-check-label small', for: 'set-mirror-enabled', text: '镜像改写' })
         )
       ),
-      h('div', { class: 'section-body' },
-        h('div', { style: 'display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap;' },
-          h('span', { class: 'field-label', text: '当前生效' }),
+      h('div', { class: 'card-body' },
+        h('div', { class: 'd-flex align-items-center gap-2 mb-3 flex-wrap' },
+          h('span', { class: 'small text-secondary', text: '当前生效' }),
           activeMirror ? statusPill('active', 'Currently Active') : statusPill('off', '已禁用'),
-          h('span', { class: 'mono muted', text: activeMirror || '（未启用）' }),
-          h('span', { class: 'spacer' }),
-          h('span', { class: 'muted', style: 'font-size:var(--fs-xs);' }, mirrors.length + ' 个镜像源')
+          h('span', { class: 'font-monospace small text-secondary', text: activeMirror || '（未启用）' }),
+          h('span', { class: 'ms-auto small text-secondary', text: mirrors.length + ' 个镜像源' })
         ),
-        mirrors.length ? h('div', { class: 'mirror-grid' }, mirrors.map(function (m) { return mirrorCard(m); }))
-          : h('div', { class: 'muted', style: 'padding:12px; text-align:center;' }, '自定义镜像源列表为空。'),
-        h('div', { style: 'display:flex; gap:8px; margin-top:14px; align-items:center;' },
-          h('span', { class: 'field-label', style: 'white-space:nowrap;', text: '自定义镜像源' }),
-          h('input', {
-            id: 'set-custom-mirrors', type: 'text', class: 'input mono',
-            style: 'flex:1;',
-            value: mirrors.join(' ') || '',
-            placeholder: 'docker.io docker.m.daocloud.io docker.1panel.live（空格分隔）'
-          })
+        mirrors.length ? h('div', { class: 'row g-2' }, mirrors.map(function (m) { return h('div', { class: 'col-12 col-md-6 col-lg-4' }, mirrorCard(m)); }))
+          : h('div', { class: 'text-secondary small text-center py-2', text: '自定义镜像源列表为空。' }),
+        h('div', { class: 'd-flex gap-2 mt-3 align-items-center' },
+          h('span', { class: 'small text-secondary text-nowrap', text: '自定义镜像源' }),
+          h('input', { id: 'set-custom-mirrors', type: 'text', class: 'form-control form-control-sm font-monospace', value: mirrors.join(' ') || '', placeholder: 'docker.io docker.m.daocloud.io（空格分隔）' })
         )
       )
     ));
 
-    /* ============ 常用镜像预设（可编辑，从 settings 读写）============ */
-    var presets = (s.PresetImages && s.PresetImages.length)
-      ? s.PresetImages.slice()
-      : [];
-    if (state._pendingPreset) {
-      presets.push(state._pendingPreset);
-      state._pendingPreset = null;
-    }
-    nodes.push(h('div', { class: 'section' },
-      h('div', { class: 'section-head' },
-        h('span', { class: 'head-icon', 'aria-hidden': 'true', text: '⭐' }),
-        h('div', { style: 'flex:1; min-width:0;' },
-          h('div', { class: 'section-title' }, '常用镜像'),
-          h('div', { class: 'section-desc', text: '「镜像」页工具栏的「常用镜像」下拉读取这里。可增删改，保存后生效。' })
-        ),
+    var presets = (s.PresetImages && s.PresetImages.length) ? s.PresetImages.slice() : [];
+    if (state._pendingPreset) { presets.push(state._pendingPreset); state._pendingPreset = null; }
+    nodes.push(h('div', { class: 'card mb-3' },
+      h('div', { class: 'card-header d-flex align-items-center gap-2' },
+        h('div', { class: 'flex-grow-1' }, h('div', { class: 'fw-semibold', text: '常用镜像' }), h('div', { class: 'small text-secondary', text: '「镜像」页工具栏的「常用镜像」下拉读取这里。可增删改，保存后生效。' })),
         statusPill(presets.length ? 'active' : 'off', presets.length + ' 项')
       ),
-      h('div', { class: 'section-body' },
-        presets.length ? h('div', { class: 'preset-list' }, presets.map(function (p, idx) {
-          return h('div', { class: 'preset-row', 'data-idx': String(idx) },
-            h('span', { class: 'drag', 'aria-hidden': 'true', title: '拖动排序（或点上下箭头）', text: '⠿' }),
-            h('input', {
-              class: 'preset-input preset-label',
-              type: 'text',
-              value: p.Label || '',
-              placeholder: '名称',
-              'aria-label': '预设名称 #' + (idx + 1)
-            }),
-            h('input', {
-              class: 'preset-input mono preset-ref',
-              type: 'text',
-              value: p.Ref || '',
-              placeholder: '镜像引用，例如 mysql:8.4',
-              'aria-label': '镜像引用 #' + (idx + 1)
-            }),
-            h('button', {
-              class: 'btn btn-sm btn-icon', type: 'button',
-              text: '↑', title: '上移',
-              'aria-label': '上移第 ' + (idx + 1) + ' 项',
-              disabled: (idx === 0) ? 'disabled' : undefined,
-              onclick: function () { movePresetRow(idx, -1); }
-            }),
-            h('button', {
-              class: 'btn btn-sm btn-icon btn-danger-ghost', type: 'button',
-              text: '✕', title: '删除',
-              'aria-label': '删除第 ' + (idx + 1) + ' 项',
-              onclick: function () { removePresetRow(idx); }
-            })
+      h('div', { class: 'card-body' },
+        presets.length ? h('div', { class: 'd-flex flex-column gap-2' }, presets.map(function (p, idx) {
+          return h('div', { class: 'row g-2 align-items-center', 'data-idx': String(idx) },
+            h('div', { class: 'col-auto', text: '⠿', title: '拖动排序（或点上下箭头）' }),
+            h('input', { class: 'form-control form-control-sm col', 'data-role': 'preset-label', type: 'text', value: p.Label || '', placeholder: '名称', 'aria-label': '预设名称 #' + (idx + 1) }),
+            h('input', { class: 'form-control form-control-sm col font-monospace', 'data-role': 'preset-ref', type: 'text', value: p.Ref || '', placeholder: '镜像引用，例如 mysql:8.4', 'aria-label': '镜像引用 #' + (idx + 1) }),
+            btn(h('i', { class: 'bi bi-arrow-up', 'aria-hidden': 'true' }), { extraClass: 'col-auto', title: '上移', ariaLabel: '上移第 ' + (idx + 1) + ' 项', disabled: (idx === 0) ? 'disabled' : undefined, onclick: function () { movePresetRow(idx, -1); } }),
+            btn(h('i', { class: 'bi bi-x-lg', 'aria-hidden': 'true' }), { variant: 'btn-outline-danger', extraClass: 'col-auto', title: '删除', ariaLabel: '删除第 ' + (idx + 1) + ' 项', onclick: function () { removePresetRow(idx); } })
           );
-        })) : h('div', { class: 'muted', style: 'padding:12px; text-align:center;' }, '尚未配置常用镜像。点击下方「添加」或「重置为默认」恢复内置清单。'),
-        h('div', { class: 'preset-add' },
-          h('button', {
-            class: 'btn btn-sm', type: 'button', text: '＋ 添加',
-            onclick: addPresetRow
-          }),
-          h('button', {
-            class: 'btn btn-sm', type: 'button', text: '↺ 重置为默认',
-            title: '恢复内置 30 个常用镜像',
-            onclick: function () {
-              if (!state.settings) return;
-              state.settings.PresetImages = DEFAULT_PRESET_IMAGES.map(function (p) { return { Label: p[0], Ref: p[1] }; });
-              renderSettings();
-              setStatus('已重置为默认常用镜像（点击「保存」生效）');
-            }
-          })
+        })) : h('div', { class: 'text-secondary small text-center py-2', text: '尚未配置常用镜像。点击下方「添加」或「重置为默认」恢复内置清单。' }),
+        h('div', { class: 'd-flex gap-2 mt-3' },
+          btn('添加', { onclick: addPresetRow, icon: h('i', { class: 'bi bi-plus-lg', 'aria-hidden': 'true' }) }),
+          btn('重置为默认', { title: '恢复内置 30 个常用镜像', onclick: function () { if (!state.settings) return; state.settings.PresetImages = DEFAULT_PRESET_IMAGES.map(function (p) { return { Label: p[0], Ref: p[1] }; }); renderSettings(); setStatus('已重置为默认常用镜像（点击「保存」生效）'); }, icon: h('i', { class: 'bi bi-arrow-counterclockwise', 'aria-hidden': 'true' }) })
         )
       )
     ));
 
-    /* 设置文件路径挪到工具栏右下角的状态位（loadSettings 结束时写入 settings-status）；
-       这里不再单独占一张卡片。 */
-
-    /* 错误 */
     if (state.error.settings) {
       var ee = state.error.settings;
-      nodes.push(h('div', { class: 'card card-problem' },
-        h('div', { class: 'card-head' },
-          h('span', { class: 'head-icon', 'aria-hidden': 'true', text: '⛔' }),
-          h('span', { text: '最近一次错误' })
-        ),
-        h('div', { class: 'card-body' },
-          h('div', { class: 'problem-list' }, h('li', { text: ee.message })),
-          ee.detail ? h('pre', { class: 'modal-detail', text: ee.detail }) : null
-        )
+      nodes.push(h('div', { class: 'card mb-3 border-danger' },
+        h('div', { class: 'card-header fw-semibold', text: '最近一次错误' }),
+        h('div', { class: 'card-body small' }, h('div', { text: ee.message }), ee.detail ? h('pre', { class: 'bg-body-tertiary border rounded p-2 small mb-0', text: ee.detail }) : null)
       ));
     }
 
-    /* 原始 JSON */
     if (s && Object.keys(s).length) {
-      nodes.push(h('details', { class: 'panel' },
-        h('summary', { title: '查看 AppSettings 原始 JSON' }, '原始 JSON（AppSettings）'),
-        h('div', { class: 'card-body' }, h('pre', { class: 'modal-detail', text: JSON.stringify(s, null, 2) }))
+      nodes.push(h('details', { class: 'mb-3' },
+        h('summary', { class: 'small', title: '查看 AppSettings 原始 JSON' }, '原始 JSON（AppSettings）'),
+        h('div', {}, h('pre', { class: 'bg-body-tertiary border rounded p-2 small', text: JSON.stringify(s, null, 2) }))
       ));
     }
 
@@ -3179,19 +2559,15 @@
       : DEFAULT_PRESET_IMAGES.map(function (p) { return { Label: p[0], Ref: p[1] }; });
     for (var i = 0; i < list.length; i++) {
       var p = list[i];
-      var label = p.Label || p.Ref;
-      nodes.push(h('option', { value: p.Ref, text: label + '  ·  ' + p.Ref }));
+      nodes.push(h('option', { value: p.Ref, text: p.Label + '  ·  ' + p.Ref }));
     }
     setChildren(sel, nodes);
   }
 
-  /* 把镜像引用填入拉取输入框并聚焦（供设置页的 chips 用）。 */
   function fillPullRef(ref) {
     var el = $('img-pull-ref');
     if (!el) { selectView('images'); return; }
-    el.value = ref;
-    el.focus();
-    el.select();
+    el.value = ref; el.focus(); el.select();
     setStatus('已填入 ' + ref + '，点击「拉取」开始');
   }
 
@@ -3199,25 +2575,11 @@
 
   async function loadTasks() {
     var key = 'tasks';
-    state.loading[key] = true;
-    state.error[key] = null;
+    state.loading[key] = true; state.error[key] = null;
     if (currentPanel() === 'tasks') renderTasks();
-    try {
-      var list = await invoke('ListTasks');
-      state.tasks = Array.isArray(list) ? list : [];
-      state.loaded[key] = true;
-      state.loadedAt[key] = Date.now();
-      setTabCount('tasks', state.tasks.length);
-      touchLast();
-    } catch (e) {
-      state.error[key] = normalizeError(e);
-      if (!state.loaded[key]) state.tasks = [];
-      if (currentPanel() === 'tasks') fail('ListTasks', e, { showDetail: false });
-    } finally {
-      state.loading[key] = false;
-      if (currentPanel() === 'tasks') renderTasks();
-      updateStatusLine();
-    }
+    try { var list = await invoke('ListTasks'); state.tasks = Array.isArray(list) ? list : []; state.loaded[key] = true; state.loadedAt[key] = Date.now(); setTabCount('tasks', state.tasks.length); touchLast(); }
+    catch (e) { state.error[key] = normalizeError(e); if (!state.loaded[key]) state.tasks = []; if (currentPanel() === 'tasks') fail('ListTasks', e, { showDetail: false }); }
+    finally { state.loading[key] = false; if (currentPanel() === 'tasks') renderTasks(); updateStatusLine(); }
   }
 
   function taskState(t) { return String(t.State || '').toLowerCase(); }
@@ -3226,57 +2588,39 @@
     var tbody = $('task-body');
     if (!tbody) return;
     var cols = 7;
-    if (renderLoadedState(tbody, 'tasks', cols, function () { loadTasks(); })) {
-      setCount('task-count', 0, '个');
-      return;
-    }
+    if (renderLoadedState(tbody, 'tasks', cols, function () { loadTasks(); })) { setCount('task-count', 0, '个'); return; }
     setCount('task-count', state.tasks.length, '个');
     if (!state.tasks.length) {
-      setChildren(tbody, [stateRow(cols, 'empty', {
-        title: '没有任务',
-        message: '拉取 / 构建等异步操作会在这里出现，可查看输出或取消。',
-        retry: function () { loadTasks(); }
-      })]);
+      setChildren(tbody, [stateRow(cols, 'empty', { title: '没有任务', message: '拉取 / 构建等异步操作会在这里出现，可查看输出或取消。', retry: function () { loadTasks(); } })]);
       return;
     }
     var frag = document.createDocumentFragment();
     state.tasks.forEach(function (t) {
       var st = taskState(t);
-      var cls = stateClass(st);
+      var cls = stateClassLocal(st);
       var id = String(t.ID || '');
-      var actions = h('div', { class: 'cell-actions' },
-        h('button', {
-          class: 'btn btn-row', type: 'button', title: '查看任务 ' + shortId(id, 12) + ' 的实时输出',
-          'aria-label': '查看任务输出', text: '输出',
-          onclick: function () { openTaskOutput(id, (t.Kind || '任务') + ' ' + (t.Ref || ''), [CH.task, CH.build, CH.pull]); }
-        }),
+      var actions = h('div', { class: 'd-flex gap-1 flex-wrap' },
+        btn('输出', { title: '查看任务 ' + shortId(id, 12) + ' 的实时输出', ariaLabel: '查看任务输出', onclick: function () { openTaskOutput(id, (t.Kind || '任务') + ' ' + (t.Ref || ''), [CH.task, CH.build, CH.pull]); } }),
         st === 'running'
-          ? h('button', {
-            class: 'btn btn-row is-danger', type: 'button',
-            title: '取消任务 ' + shortId(id, 12), 'aria-label': '取消任务', text: '取消',
-            onclick: function () { cancelTask(id); }
-          })
+          ? btn('取消', { variant: 'btn-outline-danger', title: '取消任务 ' + shortId(id, 12), ariaLabel: '取消任务', onclick: function () { cancelTask(id); } })
           : null
       );
-
       frag.appendChild(h('tr', { tabindex: '0', dataset: { ref: id }, title: '按 Enter 查看任务详情' },
-        h('td', { class: 'mono', title: id, text: shortId(id, 12) }),
-        h('td', {}, h('span', { class: 'badge badge-info', text: t.Kind || '—' })),
-        h('td', { class: 'mono', title: t.Ref || '', text: t.Ref || '—' }),
-        h('td', {}, h('span', { class: 'badge badge-' + cls, title: t.Error || '', text: statusLabel(t.State) })),
-        h('td', { class: 'muted nowrap', text: fmtTime(t.StartedAt) || '—' }),
-        h('td', { class: 'muted nowrap', text: fmtTime(t.EndedAt) || '—' }),
-        h('td', { class: 'col-actions' }, actions)
+        h('td', { class: 'font-monospace', title: id, text: shortId(id, 12) }),
+        h('td', {}, h('span', { class: 'badge rounded-pill text-bg-info', text: t.Kind || '—' })),
+        cell(t.Ref),
+        h('td', {}, h('span', { class: stateBadgeClass(st), title: t.Error || '', text: statusLabel(t.State) })),
+        cell(fmtTime(t.StartedAt), { cls: 'small text-secondary' }),
+        cell(fmtTime(t.EndedAt), { cls: 'small text-secondary' }),
+        h('td', {}, actions)
       ));
     });
     setChildren(tbody, [frag]);
   }
 
   async function cancelTask(id) {
-    try {
-      await invoke('CancelTask', id);
-      toast('success', '已请求取消任务 ' + shortId(id, 12));
-    } catch (e) { fail('CancelTask', e); }
+    try { await invoke('CancelTask', id); toast('success', '已请求取消任务 ' + shortId(id, 12)); }
+    catch (e) { fail('CancelTask', e); }
     await loadTasks();
   }
 
@@ -3293,11 +2637,9 @@
   }
 
   function lineNode(line) {
-    var cls = 'ln' + (line.stream === 'stderr' ? ' ln-stderr' : line.stream === 'system' ? ' ln-system' : '');
+    var cls = 'font-monospace small' + (line.stream === 'stderr' ? ' text-danger' : line.stream === 'system' ? ' text-secondary' : '');
     return h('span', { class: cls, text: (line.text === undefined || line.text === null ? '' : String(line.text)) + '\n' });
   }
-
-  /* ---- 日志抽屉 ---- */
 
   function logLinesFor(refAliases, channels) {
     var out = [];
@@ -3317,11 +2659,8 @@
     var body = $('logs-body');
     if (!body || !state.logs) return;
     var lines = state.logs.lines;
-    if (!lines.length) {
-      setChildren(body, [h('span', { class: 'ln-empty', text: state.logs.hint || '（暂无输出）' })]);
-    } else {
-      setChildren(body, lines.map(lineNode));
-    }
+    if (!lines.length) setChildren(body, [h('span', { class: 'text-secondary small', text: state.logs.hint || '（暂无输出）' })]);
+    else setChildren(body, lines.map(lineNode));
     autoScrollLogs();
   }
 
@@ -3341,7 +2680,7 @@
     var shouldStick = atBottom || !auto || auto.checked;
     var frag = document.createDocumentFragment();
     newLines.forEach(function (l) { frag.appendChild(lineNode(l)); });
-    if (body.firstChild && body.firstChild.className === 'ln-empty') clear(body);
+    if (body.firstChild && body.firstChild.className.indexOf('text-secondary') >= 0) clear(body);
     body.appendChild(frag);
     while (body.childNodes.length > MAX_LINES) body.removeChild(body.firstChild);
     if (shouldStick) autoScrollLogs();
@@ -3349,25 +2688,16 @@
 
   function openLogsDrawer(cfg) {
     var drawer = $('drawer-logs');
-    var title = $('logs-title');
-    var meta = $('logs-meta');
     if (!drawer) return;
     state.logs = {
-      title: cfg.title,
-      streamID: cfg.streamID || '',
-      channels: cfg.channels || null,
-      refAliases: cfg.refAliases || [],
-      lines: cfg.lines || [],
-      paused: false,
-      hint: cfg.hint || ''
+      title: cfg.title, streamID: cfg.streamID || '', channels: cfg.channels || null,
+      refAliases: cfg.refAliases || [], lines: cfg.lines || [], paused: false, hint: cfg.hint || ''
     };
-    if (title) title.textContent = cfg.title;
-    if (meta) meta.textContent = cfg.meta || '';
+    var title = $('logs-title'); if (title) title.textContent = cfg.title;
+    var meta = $('logs-meta'); if (meta) meta.textContent = cfg.meta || '';
     drawer.hidden = false;
-    var pause = $('logs-pause');
-    if (pause) { pause.textContent = '暂停'; pause.setAttribute('aria-pressed', 'false'); }
-    var body = $('logs-body');
-    if (body) body.classList.remove('is-paused');
+    var pause = $('logs-pause'); if (pause) { pause.textContent = '暂停'; }
+    var body = $('logs-body'); if (body) body.classList.remove('opacity-50');
     renderLogLines();
     if (body) setTimeout(function () { body.focus(); }, 0);
     updateStatusLine();
@@ -3379,73 +2709,51 @@
     var sid = state.logs ? state.logs.streamID : '';
     drawer.hidden = true;
     state.logs = null;
-    if (stopStream && sid) {
-      invoke('StopStream', sid).catch(function (e) { fail('StopStream', e); });
-    }
+    if (stopStream && sid) invoke('StopStream', sid).catch(function (e) { fail('StopStream', e); });
     updateStatusLine();
   }
 
   async function openContainerLogs(c) {
     var ref = c.ID || containerName(c);
     var aliases = containerAliases(c);
-    /* 先把已有缓冲显示出来，随后启动跟随流。 */
     openLogsDrawer({
-      title: '日志 · ' + containerName(c),
-      refAliases: aliases,
-      channels: [CH.logs],
-      lines: logLinesFor(aliases, [CH.logs]),
-      hint: '正在启动日志流…',
-      meta: '容器 ' + shortId(ref, 12)
+      title: '日志 · ' + containerName(c), refAliases: aliases, channels: [CH.logs],
+      lines: logLinesFor(aliases, [CH.logs]), hint: '正在启动日志流…', meta: '容器 ' + shortId(ref, 12)
     });
     try {
       var sid = await invoke('StartLogs', ref, { Follow: true, Tail: 200, Timestamps: false, Since: '', Until: '' });
       if (state.logs) {
         state.logs.streamID = sid || '';
         state.logs.hint = '（日志流已启动，等待输出…）';
-        var meta = $('logs-meta');
-        if (meta) meta.textContent = '流 ' + shortId(sid, 10);
+        var meta = $('logs-meta'); if (meta) meta.textContent = '流 ' + shortId(sid, 10);
         if (!state.logs.lines.length) renderLogLines();
       }
       toast('info', '日志流已启动：' + shortId(sid, 10));
     } catch (e) {
       fail('StartLogs', e);
-      if (state.logs) {
-        state.logs.hint = '日志流启动失败：' + normalizeError(e).message;
-        renderLogLines();
-      }
+      if (state.logs) { state.logs.hint = '日志流启动失败：' + normalizeError(e).message; renderLogLines(); }
     }
     updateStatusLine();
   }
 
   async function openTaskOutput(taskId, title, channels) {
     var aliases = [taskId];
-    /* 从后端返回的 Task.Output 里回填历史：某些任务（如事件流、环境自检）
-       不走 wslc:output 事件通道，或者事件在打开抽屉之前到达，前端 store
-       里没有它们的输出 —— 这时 Output 字段是唯一能拿到内容的方式。 */
     var t = (state.tasks || []).find(function (x) { return String(x.ID) === String(taskId); });
     var hist = (t && typeof t.Output === 'string' && t.Output.length) ? t.Output.split('\n') : [];
     var live = logLinesFor(aliases, channels || [CH.task, CH.build, CH.pull]);
     openLogsDrawer({
-      title: title || ('任务输出 · ' + shortId(taskId, 12)),
-      refAliases: aliases,
-      channels: channels || [CH.task, CH.build, CH.pull],
-      lines: hist.concat(live),
-      hint: '（暂无输出；任务开始输出后会实时显示）',
-      meta: '任务 ' + shortId(taskId, 12)
+      title: title || ('任务输出 · ' + shortId(taskId, 12)), refAliases: aliases,
+      channels: channels || [CH.task, CH.build, CH.pull], lines: hist.concat(live),
+      hint: '（暂无输出；任务开始输出后会实时显示）', meta: '任务 ' + shortId(taskId, 12)
     });
   }
-
-  /* ---- 终端抽屉 ---- */
 
   function renderTermLines() {
     var surface = $('term-surface');
     if (!surface || !state.term) return;
     var lines = state.term.lines;
-    if (!lines.length) {
-      setChildren(surface, [h('span', { class: 'ln-system', text: '（终端已启动，点击此处聚焦后可直接按键输入，或在下方输入整行命令）\n' })]);
-    } else {
-      setChildren(surface, lines.map(lineNode));
-    }
+    if (!lines.length) setChildren(surface, [h('span', { class: 'text-secondary small', text: '（终端已启动，点击此处聚焦后可直接按键输入，或在下方输入整行命令）\n' })]);
+    else setChildren(surface, lines.map(lineNode));
     surface.scrollTop = surface.scrollHeight;
   }
 
@@ -3453,7 +2761,7 @@
     var surface = $('term-surface');
     if (!surface || !state.term) return;
     var atBottom = Math.abs(surface.scrollHeight - surface.scrollTop - surface.clientHeight) < 24;
-    if (surface.firstChild && surface.firstChild.className === 'ln-system') clear(surface);
+    if (surface.firstChild && surface.firstChild.className.indexOf('text-secondary') >= 0) clear(surface);
     var frag = document.createDocumentFragment();
     newLines.forEach(function (l) { frag.appendChild(lineNode(l)); });
     surface.appendChild(frag);
@@ -3470,14 +2778,11 @@
     if (!drawer) return;
     drawer.hidden = false;
     state.term = { streamID: '', ref: ref, aliases: aliases, lines: [], cols: cols, rows: rows };
-    var title = $('term-title');
-    if (title) title.textContent = '终端 · ' + containerName(c);
-    var meta = $('term-meta');
-    if (meta) meta.textContent = '启动中…';
+    var title = $('term-title'); if (title) title.textContent = '终端 · ' + containerName(c);
+    var meta = $('term-meta'); if (meta) meta.textContent = '启动中…';
     renderTermLines();
     try {
-      var sid = await invoke('StartTerminal', ref,
-        { TTY: tty, User: '', WorkDir: '', Env: [] }, cols, rows);
+      var sid = await invoke('StartTerminal', ref, { TTY: tty, User: '', WorkDir: '', Env: [] }, cols, rows);
       if (state.term) {
         state.term.streamID = sid || '';
         if (meta) meta.textContent = '流 ' + shortId(sid, 10) + (tty ? ' · TTY' : ' · 非 TTY');
@@ -3497,9 +2802,8 @@
   async function terminalWrite(data) {
     if (!state.term) { toast('warn', '终端未启动。'); return; }
     if (!state.term.streamID) { toast('warn', '终端流尚未就绪。'); return; }
-    try {
-      await invoke('TerminalWrite', state.term.streamID, data);
-    } catch (e) { fail('TerminalWrite', e); }
+    try { await invoke('TerminalWrite', state.term.streamID, data); }
+    catch (e) { fail('TerminalWrite', e); }
   }
 
   function closeTerminal(stopStream) {
@@ -3524,8 +2828,6 @@
     invoke('TerminalResize', state.term.streamID, cols, rows).catch(function (e) { fail('TerminalResize', e); });
   }, 250);
 
-  /* ---- 事件路由 ---- */
-
   function onOutput(ev) {
     if (!ev || typeof ev !== 'object') return;
     var channel = String(ev.Channel || ev.channel || '');
@@ -3546,25 +2848,18 @@
         appendLogLines([line]);
       }
     }
-
     if (state.term && (channel === CH.terminal || channel === CH.logs) && anyRefMatch(state.term.aliases, ref)) {
       state.term.lines.push(line);
       if (state.term.lines.length > MAX_LINES) state.term.lines.splice(0, state.term.lines.length - MAX_LINES);
       appendTermLines([line]);
     }
-
-    if (channel === CH.build || channel === CH.pull || channel === CH.task) {
-      scheduleTasksRefresh();
-    }
+    if (channel === CH.build || channel === CH.pull || channel === CH.task) scheduleTasksRefresh();
   }
 
   var tasksRefreshTimer = 0;
   function scheduleTasksRefresh() {
     if (tasksRefreshTimer) return;
-    tasksRefreshTimer = setTimeout(function () {
-      tasksRefreshTimer = 0;
-      loadTasks();
-    }, 600);
+    tasksRefreshTimer = setTimeout(function () { tasksRefreshTimer = 0; loadTasks(); }, 600);
   }
 
   function subscribeEvents() {
@@ -3587,21 +2882,15 @@
         }
       });
       return true;
-    } catch (e) {
-      fail('EventsOn', e);
-      return false;
-    }
+    } catch (e) { fail('EventsOn', e); return false; }
   }
 
   /* ========================== 17. 全局清理动作 ========================== */
 
   function pruneContainersDialog() {
     confirmDialog({
-      title: '清理停止的容器',
-      message: '将删除所有已停止的容器。运行中的容器不受影响。此操作不可撤销。',
-      detail: 'PruneContainers()',
-      confirmLabel: '开始清理',
-      danger: true
+      title: '清理停止的容器', message: '将删除所有已停止的容器。运行中的容器不受影响。此操作不可撤销。', detail: 'PruneContainers()',
+      confirmLabel: '开始清理', danger: true
     }).then(function (r) {
       if (!r.confirmed) return;
       return invoke('PruneContainers').then(function (res) {
@@ -3613,13 +2902,29 @@
     });
   }
 
+  function pruneImagesAllDialog() {
+    confirmDialog({
+      title: '清理全部未使用镜像', message: '将删除所有未被容器引用的镜像（含中间层）。镜像需要重新拉取或构建才能恢复。', detail: 'PruneImages(all=true)',
+      confirmLabel: '全部清理', danger: true, requireText: 'PRUNE'
+    }).then(function (r) {
+      if (!r.confirmed) return;
+      return invoke('PruneImages', true).then(function (res) {
+        var out = res && res.Stdout ? res.Stdout : safeJson(res);
+        if (String(out).trim()) showTextModal('清理镜像结果', String(out));
+        else toast('info', '没有可清理的镜像。');
+        return loadImages();
+      }).catch(function (e) { fail('PruneImages', e); });
+    });
+  }
+
   /* ========================== 18. 事件绑定 ========================== */
 
   function bindShell() {
-    /* 标签页 */
-    var tabs = document.querySelectorAll('.tab');
-    Array.prototype.forEach.call(tabs, function (tab) {
-      tab.addEventListener('click', function () { selectView(tab.dataset.view); });
+    /* 标签页：按 id 逐个绑定（功能钩子用 id，而非 class） */
+    VIEWS.forEach(function (view) {
+      var tab = $('tab-' + view);
+      if (!tab) return;
+      tab.addEventListener('click', function () { selectView(view); });
       tab.addEventListener('keydown', function (ev) {
         var idx = VIEWS.indexOf(state.view);
         var next = -1;
@@ -3630,8 +2935,7 @@
         if (next < 0) return;
         ev.preventDefault();
         selectView(VIEWS[next]);
-        var t = $('tab-' + VIEWS[next]);
-        if (t) t.focus();
+        var t = $('tab-' + VIEWS[next]); if (t) t.focus();
       });
     });
 
@@ -3652,75 +2956,44 @@
           if (next < 0) return;
           ev.preventDefault();
           selectSubView(view, GROUPS[view][next]);
-          var t = $('subtab-' + view + '-' + GROUPS[view][next]);
-          if (t) t.focus();
+          var t = $('subtab-' + view + '-' + GROUPS[view][next]); if (t) t.focus();
         });
       });
     });
 
-    /* 顶栏 */
-    var refresh = $('btn-refresh');
-    if (refresh) refresh.addEventListener('click', refreshCurrentView);
+    var refresh = $('btn-refresh'); if (refresh) refresh.addEventListener('click', refreshCurrentView);
+    var theme = $('btn-theme'); if (theme) theme.addEventListener('click', toggleTheme);
 
-    var theme = $('btn-theme');
-    if (theme) theme.addEventListener('click', toggleTheme);
-
-    var prune = $('btn-prune');
-    if (prune) {
-      prune.addEventListener('click', function () {
-        openMenu(prune, [
+    /* 清理菜单：复用通用 openMenu（写入 menu-root，role=menuitem），
+       不依赖 Bootstrap 原生 dropdown 的 JS 切换，保证无头/脚本环境下也能触发。 */
+    var btnPrune = $('btn-prune');
+    if (btnPrune) {
+      btnPrune.addEventListener('click', function () {
+        openMenu(btnPrune, [
           { type: 'label', label: '清理（破坏性）' },
-          { label: '清理停止的容器', danger: true, title: 'PruneContainers（需确认）', onSelect: pruneContainersDialog },
-          { label: '清理悬空镜像', danger: true, title: 'PruneImages(all=false)（需确认）', onSelect: pruneImagesDialog },
-          { label: '清理全部未使用镜像…', danger: true, title: 'PruneImages(all=true)（需确认）', onSelect: function () {
-            confirmDialog({
-              title: '清理全部未使用镜像',
-              message: '将删除所有未被容器引用的镜像（含中间层）。镜像需要重新拉取或构建才能恢复。',
-              detail: 'PruneImages(all=true)',
-              confirmLabel: '全部清理',
-              danger: true,
-              requireText: 'PRUNE'
-            }).then(function (r) {
-              if (!r.confirmed) return;
-              return invoke('PruneImages', true).then(function (res) {
-                var out = res && res.Stdout ? res.Stdout : safeJson(res);
-                if (String(out).trim()) showTextModal('清理镜像结果', String(out));
-                else toast('info', '没有可清理的镜像。');
-                return loadImages();
-              }).catch(function (e) { fail('PruneImages', e); });
-            });
-          } }
+          { label: '清理停止的容器', danger: true, onSelect: pruneContainersDialog },
+          { label: '清理悬空镜像', danger: true, onSelect: pruneImagesDialog },
+          { label: '清理全部未使用镜像…', danger: true, onSelect: pruneImagesAllDialog }
         ]);
       });
     }
 
     /* 容器工具条 */
-    var segs = document.querySelectorAll('.seg');
-    Array.prototype.forEach.call(segs, function (seg) {
-      seg.addEventListener('click', function () {
-        state.ct.scope = seg.dataset.scope;
-        Array.prototype.forEach.call(segs, function (s) {
-          var on = s.dataset.scope === state.ct.scope;
-          s.classList.toggle('is-active', on);
-          s.setAttribute('aria-pressed', on ? 'true' : 'false');
-        });
+    ['all', 'running'].forEach(function (scope) {
+      var el = $('seg-' + scope);
+      if (!el) return;
+      el.addEventListener('change', function () {
+        if (!el.checked) return;
+        state.ct.scope = scope;
         loadContainers();
       });
     });
 
     var search = $('ct-search');
     if (search) {
-      search.addEventListener('input', debounce(function () {
-        state.query = search.value;
-        loadContainers();
-      }, 220));
+      search.addEventListener('input', debounce(function () { state.query = search.value; loadContainers(); }, 220));
       search.addEventListener('keydown', function (ev) {
-        if (ev.key === 'Escape' && search.value) {
-          ev.stopPropagation();
-          search.value = '';
-          state.query = '';
-          loadContainers();
-        }
+        if (ev.key === 'Escape' && search.value) { ev.stopPropagation(); search.value = ''; state.query = ''; loadContainers(); }
       });
     }
 
@@ -3729,29 +3002,15 @@
       statsToggle.addEventListener('change', function () {
         state.ct.stats = statsToggle.checked;
         if (statsToggle.checked) {
-          invoke('ContainerStats', true).then(function (list) {
-            applyStats(list);
-            renderContainers();
-          }).catch(function (e) {
-            state.ct.statsMap = null;
-            state.ct.stats = false;
-            statsToggle.checked = false;
-            fail('ContainerStats', e);
-            renderContainers();
-          });
-        } else {
-          state.ct.statsMap = null;
-          renderContainers();
-        }
+          invoke('ContainerStats', true).then(function (list) { applyStats(list); renderContainers(); })
+            .catch(function (e) { state.ct.statsMap = null; state.ct.stats = false; statsToggle.checked = false; fail('ContainerStats', e); renderContainers(); });
+        } else { state.ct.statsMap = null; renderContainers(); }
       });
     }
 
-    var ctRun = $('btn-ct-run');
-    if (ctRun) ctRun.addEventListener('click', runContainerDialog);
-    var ctReload = $('btn-ct-reload');
-    if (ctReload) ctReload.addEventListener('click', function () { loadContainers(); });
+    var ctRun = $('btn-ct-run'); if (ctRun) ctRun.addEventListener('click', runContainerDialog);
+    var ctReload = $('btn-ct-reload'); if (ctReload) ctReload.addEventListener('click', function () { loadContainers(); });
 
-    /* 容器表格：行内操作 + 键盘 */
     var ctBody = $('ct-body');
     if (ctBody) {
       ctBody.addEventListener('click', function (ev) {
@@ -3775,10 +3034,8 @@
         if (!tr) return;
         var c = findContainer(tr.dataset.ref);
         if (!c) return;
-        if (ev.key === 'Enter') {
-          ev.preventDefault();
-          inspectContainer(c.ID || containerName(c));
-        } else if (ev.key === 'F10' && ev.shiftKey) {
+        if (ev.key === 'Enter') { ev.preventDefault(); inspectContainer(c.ID || containerName(c)); }
+        else if (ev.key === 'F10' && ev.shiftKey) {
           ev.preventDefault();
           var more = tr.querySelector('button[aria-haspopup="menu"]');
           if (more) openContainerMenu(more, c);
@@ -3796,14 +3053,10 @@
     }
 
     /* 镜像 */
-    var imgAll = $('img-all');
-    if (imgAll) imgAll.addEventListener('change', loadImages);
-    var imgReload = $('btn-img-reload');
-    if (imgReload) imgReload.addEventListener('click', loadImages);
-    var imgPull = $('btn-img-pull');
-    if (imgPull) imgPull.addEventListener('click', pullImage);
-    var imgPullRef = $('img-pull-ref');
-    if (imgPullRef) imgPullRef.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); pullImage(); } });
+    var imgAll = $('img-all'); if (imgAll) imgAll.addEventListener('change', loadImages);
+    var imgReload = $('btn-img-reload'); if (imgReload) imgReload.addEventListener('click', loadImages);
+    var imgPull = $('btn-img-pull'); if (imgPull) imgPull.addEventListener('click', pullImage);
+    var imgPullRef = $('img-pull-ref'); if (imgPullRef) imgPullRef.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); pullImage(); } });
     var imgPullPresets = $('img-pull-presets');
     if (imgPullPresets) {
       fillPullPresets(imgPullPresets);
@@ -3815,14 +3068,10 @@
         imgPullPresets.value = '';
       });
     }
-    var imgPrune = $('btn-img-prune');
-    if (imgPrune) imgPrune.addEventListener('click', pruneImagesDialog);
-    var imgExport = $('btn-img-export');
-    if (imgExport) imgExport.addEventListener('click', imageExportDialog);
-    var imgImport = $('btn-img-import');
-    if (imgImport) imgImport.addEventListener('click', imageImportDialog);
-    var buildForm = $('build-form');
-    if (buildForm) buildForm.addEventListener('submit', buildImage);
+    var imgPrune = $('btn-img-prune'); if (imgPrune) imgPrune.addEventListener('click', pruneImagesDialog);
+    var imgExport = $('btn-img-export'); if (imgExport) imgExport.addEventListener('click', imageExportDialog);
+    var imgImport = $('btn-img-import'); if (imgImport) imgImport.addEventListener('click', imageImportDialog);
+    var buildForm = $('build-form'); if (buildForm) buildForm.addEventListener('submit', buildImage);
 
     var imgBody = $('img-body');
     if (imgBody) {
@@ -3835,8 +3084,7 @@
     }
 
     /* 会话 */
-    var sessReload = $('btn-sess-reload');
-    if (sessReload) sessReload.addEventListener('click', loadSessions);
+    var sessReload = $('btn-sess-reload'); if (sessReload) sessReload.addEventListener('click', loadSessions);
     var sessBody = $('sess-body');
     if (sessBody) {
       sessBody.addEventListener('keydown', function (ev) {
@@ -3849,47 +3097,28 @@
       });
     }
 
-    /* 会话存储 */
-    var storReload = $('btn-stor-reload');
-    if (storReload) storReload.addEventListener('click', loadStorage);
+    var storReload = $('btn-stor-reload'); if (storReload) storReload.addEventListener('click', loadStorage);
 
     /* 卷 */
-    var volForm = $('vol-form');
-    if (volForm) volForm.addEventListener('submit', createVolume);
-    var volReload = $('btn-vol-reload');
-    if (volReload) volReload.addEventListener('click', loadVolumes);
-    var volBody = $('vol-body');
-    if (volBody) bindRowDetail(volBody, '卷', function (ref) {
-      return state.volumes.filter(function (v) { return String(v.Name) === String(ref); })[0];
-    });
+    var volForm = $('vol-form'); if (volForm) volForm.addEventListener('submit', createVolume);
+    var volReload = $('btn-vol-reload'); if (volReload) volReload.addEventListener('click', loadVolumes);
+    var volBody = $('vol-body'); if (volBody) bindRowDetail(volBody, '卷', function (ref) { return state.volumes.filter(function (v) { return String(v.Name) === String(ref); })[0]; });
 
     /* 网络 */
-    var netForm = $('net-form');
-    if (netForm) netForm.addEventListener('submit', createNetwork);
-    var netReload = $('btn-net-reload');
-    if (netReload) netReload.addEventListener('click', loadNetworks);
-    var netBody = $('net-body');
-    if (netBody) bindRowDetail(netBody, '网络', function (ref) {
-      return state.networks.filter(function (n) { return String(n.Name) === String(ref); })[0];
-    });
+    var netForm = $('net-form'); if (netForm) netForm.addEventListener('submit', createNetwork);
+    var netReload = $('btn-net-reload'); if (netReload) netReload.addEventListener('click', loadNetworks);
+    var netBody = $('net-body'); if (netBody) bindRowDetail(netBody, '网络', function (ref) { return state.networks.filter(function (n) { return String(n.Name) === String(ref); })[0]; });
 
     /* 环境 */
-    var envCheck = $('btn-env-check');
-    if (envCheck) envCheck.addEventListener('click', loadEnv);
+    var envCheck = $('btn-env-check'); if (envCheck) envCheck.addEventListener('click', loadEnv);
     var envAuto = $('env-auto');
     if (envAuto) envAuto.addEventListener('change', function () {
-      if (envAuto.checked) {
-        state.autoRefresh.env = setInterval(loadEnv, 15000);
-        toast('info', '环境自检将每 15 秒自动执行。');
-      } else if (state.autoRefresh.env) {
-        clearInterval(state.autoRefresh.env);
-        state.autoRefresh.env = 0;
-      }
+      if (envAuto.checked) { state.autoRefresh.env = setInterval(loadEnv, 15000); toast('info', '环境自检将每 15 秒自动执行。'); }
+      else if (state.autoRefresh.env) { clearInterval(state.autoRefresh.env); state.autoRefresh.env = 0; }
     });
 
     /* 任务 */
-    var taskReload = $('btn-task-reload');
-    if (taskReload) taskReload.addEventListener('click', loadTasks);
+    var taskReload = $('btn-task-reload'); if (taskReload) taskReload.addEventListener('click', loadTasks);
     var taskBody = $('task-body');
     if (taskBody) {
       taskBody.addEventListener('keydown', function (ev) {
@@ -3902,21 +3131,13 @@
     }
 
     /* 设置 */
-    var settingsSave = $('btn-settings-save');
-    if (settingsSave) settingsSave.addEventListener('click', saveSettings);
-    var settingsReload = $('btn-settings-reload');
-    if (settingsReload) settingsReload.addEventListener('click', loadSettings);
+    var settingsSave = $('btn-settings-save'); if (settingsSave) settingsSave.addEventListener('click', saveSettings);
+    var settingsReload = $('btn-settings-reload'); if (settingsReload) settingsReload.addEventListener('click', loadSettings);
     watchSettingsDirty();
 
     /* 日志抽屉 */
-    var logsClose = $('logs-close');
-    if (logsClose) logsClose.addEventListener('click', function () { closeLogsDrawer(true); });
-    var logsClear = $('logs-clear');
-    if (logsClear) logsClear.addEventListener('click', function () {
-      if (!state.logs) return;
-      state.logs.lines = [];
-      renderLogLines();
-    });
+    var logsClose = $('logs-close'); if (logsClose) logsClose.addEventListener('click', function () { closeLogsDrawer(true); });
+    var logsClear = $('logs-clear'); if (logsClear) logsClear.addEventListener('click', function () { if (!state.logs) return; state.logs.lines = []; renderLogLines(); });
     var logsStop = $('logs-stop');
     if (logsStop) logsStop.addEventListener('click', async function () {
       if (!state.logs || !state.logs.streamID) { toast('info', '当前没有活动日志流。'); return; }
@@ -3924,8 +3145,7 @@
       try {
         await invoke('StopStream', sid);
         if (state.logs) state.logs.streamID = '';
-        var meta = $('logs-meta');
-        if (meta) meta.textContent = '流已停止';
+        var meta = $('logs-meta'); if (meta) meta.textContent = '流已停止';
         toast('success', '日志流已停止：' + shortId(sid, 10));
       } catch (e) { fail('StopStream', e); }
       updateStatusLine();
@@ -3935,16 +3155,13 @@
       if (!state.logs) return;
       state.logs.paused = !state.logs.paused;
       logsPause.textContent = state.logs.paused ? '继续' : '暂停';
-      logsPause.setAttribute('aria-pressed', state.logs.paused ? 'true' : 'false');
-      var body = $('logs-body');
-      if (body) body.classList.toggle('is-paused', state.logs.paused);
+      var body = $('logs-body'); if (body) body.classList.toggle('opacity-50', state.logs.paused);
       if (!state.logs.paused) renderLogLines();
       else toast('info', '日志显示已暂停；后端流仍在继续，恢复后会补齐缓冲。');
     });
 
     /* 终端抽屉 */
-    var termClose = $('term-close');
-    if (termClose) termClose.addEventListener('click', function () { closeTerminal(true); });
+    var termClose = $('term-close'); if (termClose) termClose.addEventListener('click', function () { closeTerminal(true); });
     var termStop = $('term-stop');
     if (termStop) termStop.addEventListener('click', async function () {
       if (!state.term || !state.term.streamID) { toast('info', '当前没有终端流。'); return; }
@@ -3952,30 +3169,19 @@
       try {
         await invoke('StopStream', sid);
         if (state.term) state.term.streamID = '';
-        var meta = $('term-meta');
-        if (meta) meta.textContent = '流已停止';
+        var meta = $('term-meta'); if (meta) meta.textContent = '流已停止';
         toast('success', '终端流已停止：' + shortId(sid, 10));
       } catch (e) { fail('StopStream', e); }
       updateStatusLine();
     });
-    var termClear = $('term-clear');
-    if (termClear) termClear.addEventListener('click', function () {
-      if (!state.term) return;
-      state.term.lines = [];
-      renderTermLines();
-    });
-    var termCtrc = $('term-ctrlc');
-    if (termCtrc) termCtrc.addEventListener('click', function () { terminalWrite('\u0003'); });
+    var termClear = $('term-clear'); if (termClear) termClear.addEventListener('click', function () { if (!state.term) return; state.term.lines = []; renderTermLines(); });
+    var termCtrc = $('term-ctrlc'); if (termCtrc) termCtrc.addEventListener('click', function () { terminalWrite('\u0003'); });
     var termForm = $('term-form');
     if (termForm) termForm.addEventListener('submit', function (ev) {
       ev.preventDefault();
-      var line = $('term-line');
-      if (!line) return;
-      var v = line.value;
-      line.value = '';
-      terminalWrite(v + '\r');
+      var line = $('term-line'); if (!line) return;
+      var v = line.value; line.value = ''; terminalWrite(v + '\r');
     });
-
     var surface = $('term-surface');
     if (surface) {
       surface.addEventListener('keydown', function (ev) {
@@ -3999,40 +3205,31 @@
     window.addEventListener('resize', resizeTerminal);
 
     /* 状态栏错误 */
-    var statusErr = $('status-err');
-    if (statusErr) statusErr.addEventListener('click', showErrorsModal);
+    var statusErr = $('status-err'); if (statusErr) statusErr.addEventListener('click', showErrorsModal);
 
     /* 全局快捷键 */
     document.addEventListener('keydown', function (ev) {
-      if (ev.key === 'F5') {
-        ev.preventDefault();
-        refreshCurrentView();
-        return;
-      }
+      if (ev.key === 'F5') { ev.preventDefault(); refreshCurrentView(); return; }
       if (ev.key === 'Escape') {
         var menuRoot = $('menu-root');
         if (menuRoot && !menuRoot.hidden) { closeMenu(); return; }
         var modalRoot = $('modal-root');
-        if (modalRoot && !modalRoot.hidden) return; /* 由模态自身处理 */
+        if (modalRoot && !modalRoot.hidden) return;
         var termDrawer = $('drawer-terminal');
         if (termDrawer && !termDrawer.hidden) { closeTerminal(true); return; }
         var logDrawer = $('drawer-logs');
-        if (logDrawer && !logDrawer.hidden && document.activeElement !== $('ct-search')) { closeLogsDrawer(true); }
+        if (logDrawer && !logDrawer.hidden && document.activeElement !== $('ct-search')) closeLogsDrawer(true);
       }
     });
 
-    /* 未捕获异常统一呈现，绝不静默 */
-    window.addEventListener('error', function (ev) {
-      fail('未捕获异常', ev.error || ev.message);
-    });
+    window.addEventListener('error', function (ev) { fail('未捕获异常', ev.error || ev.message); });
     window.addEventListener('unhandledrejection', function (ev) {
       var reason = ev.reason;
-      if (reason && reason.code === 'BACKEND_UNAVAILABLE') return; /* 已由横幅说明 */
+      if (reason && reason.code === 'BACKEND_UNAVAILABLE') return;
       fail('未处理的 Promise 拒绝', reason);
     });
   }
 
-  /* 卷 / 网络表格：Enter 打开详情（键盘可达）。 */
   function bindRowDetail(tbody, kind, lookup) {
     tbody.addEventListener('keydown', function (ev) {
       var tr = ev.target.closest ? ev.target.closest('tr[data-ref]') : null;
@@ -4055,37 +3252,43 @@
     return null;
   }
 
+  /* stateClassLocal：原 stateClass 因与 Bootstrap “state” 概念无冲突而保留，
+     这里仅复用一个本地副本以避免与任何全局污染。 */
+  function stateClassLocal(st) {
+    if (st === 'running' || st === 'succeeded') return 'running';
+    if (st === 'exited' || st === 'canceled' || st === 'cancelled') return 'exited';
+    if (st === 'created') return 'created';
+    if (st === 'failed' || st === 'dead') return 'error';
+    if (st === 'paused') return 'created';
+    return 'exited';
+  }
+
   /* ========================== 19. 主题 ========================== */
 
   function applyTheme(theme) {
     state.theme = theme === 'light' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', state.theme);
+    document.documentElement.setAttribute('data-bs-theme', state.theme);
     var btn = $('btn-theme');
     if (btn) {
       btn.setAttribute('aria-pressed', state.theme === 'light' ? 'true' : 'false');
       btn.title = state.theme === 'light' ? '切换到深色主题' : '切换到浅色主题';
     }
-    try { localStorage.setItem('wslc.theme', state.theme); } catch (e) { /* 隐私模式 */ }
+    try { localStorage.setItem('wslc.theme', state.theme); } catch (e) { }
   }
 
-  function toggleTheme() {
-    applyTheme(state.theme === 'dark' ? 'light' : 'dark');
-  }
+  function toggleTheme() { applyTheme(state.theme === 'dark' ? 'light' : 'dark'); }
 
   function initTheme() {
     var saved = null;
     try { saved = localStorage.getItem('wslc.theme'); } catch (e) { saved = null; }
     if (saved === 'light' || saved === 'dark') { applyTheme(saved); return; }
     var prefersLight = false;
-    try {
-      prefersLight = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
-    } catch (e) { prefersLight = false; }
+    try { prefersLight = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches); } catch (e) { prefersLight = false; }
     applyTheme(prefersLight ? 'light' : 'dark');
   }
 
   /* ========================== 20. 启动 ========================== */
 
-  /* 解析 #/view 或 #/view/panel 形式的地址栏。 */
   function initFromHash() {
     var view = 'containers';
     var panel = null;
@@ -4105,10 +3308,6 @@
     initTheme();
     bindShell();
 
-    /* 防御性初始化：在任何异步操作之前，先把所有视图和面板隐藏，
-       只保留默认视图 containers。这能防止 WebView2 用缓存旧版
-       HTML（其中部分 section 没有 hidden 属性）时出现多个面板
-       同时可见的情况。selectView 之后会重新设置正确的可见性。 */
     VIEWS.forEach(function (v) {
       var sec = $('view-' + v);
       if (sec) sec.hidden = (v !== 'containers');
@@ -4137,20 +3336,15 @@
 
     selectView(initFromHash());
 
-    /* 环境自检优先：它决定其它视图是否需要提示「服务未就绪」。 */
     loadEnv().then(function () { touchLast(); });
     loadTasks();
     loadContainers();
 
-    /* 事件流（best-effort） */
     invoke('StreamEvents').catch(function (e) {
       var info = normalizeError(e);
-      if (info.code !== 'BACKEND_UNAVAILABLE') {
-        toast('warn', '事件流未启动：' + info.message);
-      }
+      if (info.code !== 'BACKEND_UNAVAILABLE') toast('warn', '事件流未启动：' + info.message);
     });
 
-    /* 任务自动刷新：仅在任务视图可见时请求后端。 */
     setInterval(function () {
       var cb = $('task-auto');
       if (!cb || !cb.checked) return;
@@ -4160,7 +3354,6 @@
       loadTasks();
     }, 2000);
 
-    /* 面板超过 60s 未更新时，窗口重新聚焦后自动刷新当前面板。 */
     window.addEventListener('focus', function () {
       var panel = currentPanel();
       if (state.loaded[panel] && viewAge(panel) > VIEW_STALE_MS * 3) loadPanel(panel);
@@ -4177,12 +3370,8 @@
   window.__wslc = {
     diag: function () {
       return {
-        mode: backend.mode,
-        runtime: hasRuntime(),
-        goBridge: !!goApp(),
-        missingBindings: backend.missing,
-        expected: BACKEND_METHODS,
-        view: state.view
+        mode: backend.mode, runtime: hasRuntime(), goBridge: !!goApp(),
+        missingBindings: backend.missing, expected: BACKEND_METHODS, view: state.view
       };
     },
     expectedMethods: BACKEND_METHODS,

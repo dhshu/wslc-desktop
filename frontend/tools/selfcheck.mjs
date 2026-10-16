@@ -24,7 +24,7 @@ const read = (p) => readFileSync(p, 'utf8');
 
 const appJs = read(join(frontend, 'app.js'));
 const indexHtml = read(join(frontend, 'index.html'));
-const stylesCss = read(join(frontend, 'styles.css'));
+const bootstrapCss = read(join(frontend, 'bootstrap.min.css'));
 const appBindings = read(join(frontend, 'wailsjs', 'go', 'main', 'App.js'));
 const runtimeShim = read(join(frontend, 'wailsjs', 'runtime', 'runtime.js'));
 const contract = read(join(root, 'docs', 'CONTRACT.md'));
@@ -71,10 +71,15 @@ const htmlIdSet = new Set(htmlIds);
 const dupes = htmlIds.filter((id, i) => htmlIds.indexOf(id) !== i);
 if (dupes.length) fail(`index.html 存在重复 id：${[...new Set(dupes)].join(', ')}`);
 
+/* 先剥掉注释：注释里若提到 $('id') 之类会被误当成真实引用（假阳性）。
+   仅对“可执行代码”做 id 提取。 */
+const appCode = appJs
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 const refs = new Set();
-for (const m of appJs.matchAll(/\$\('([^']+)'\)/g)) refs.add(m[1]);
-for (const m of appJs.matchAll(/getElementById\('([^']+)'\)/g)) refs.add(m[1]);
-for (const m of appJs.matchAll(/querySelector\('#([A-Za-z0-9_-]+)/g)) refs.add(m[1]);
+for (const m of appCode.matchAll(/\$\('([^']+)'\)/g)) refs.add(m[1]);
+for (const m of appCode.matchAll(/getElementById\('([^']+)'\)/g)) refs.add(m[1]);
+for (const m of appCode.matchAll(/querySelector\('#([A-Za-z0-9_-]+)/g)) refs.add(m[1]);
 const missingIds = [...refs].filter((id) => !htmlIdSet.has(id));
 if (missingIds.length) fail(`app.js 引用了不存在的 DOM id：${missingIds.join(', ')}`);
 notes.push(`app.js 引用的 DOM id：${refs.size} 个，缺失 ${missingIds.length} 个`);
@@ -121,33 +126,36 @@ allPanels.forEach(([v, p]) => {
 });
 notes.push(`视图（${views.length} 分组 / ${allPanels.length} 面板）：` + views.join(' / '));
 
-/* ------------------------------------------------- 4b. [hidden] 必须压得住 display */
-/* 这是"切换标签页时看到其它 tab 内容"的回归点：.view 与 .panel.view-panel
-   都声明了 display（作者样式），作者样式优先于 UA 的 [hidden]{display:none}，
-   于是被隐藏的面板照常渲染。styles.css 必须显式给出 [hidden] 规则。 */
+/* ------------------------------------------------- 4b. [hidden] 由 Bootstrap Reboot 兜底 */
+/* 这是"切换标签页时看到其它 tab 内容"的回归点：被隐藏的 view/panel 必须真正
+   display:none。原先由 styles.css 手工给出 .view[hidden]{display:none!important}，
+   现改用 Bootstrap 5 Reboot 自带的 [hidden]{display:none!important}（bootstrap.min.css）。
+   这里只校验该规则确实存在于 Bootstrap 产物中——不再依赖任何自定义样式表。 */
 {
-  /* 必须先剥掉注释：注释里提到 [hidden] / .panel 会被误当成选择器，
-     让检查在规则被删掉之后仍然通过（假阴性）。 */
-  const cssCode = stylesCss.replace(/\/\*[\s\S]*?\*\//g, '');
+  const cssCode = bootstrapCss.replace(/\/\*[\s\S]*?\*\//g, '');
   const hiddenRules = [...cssCode.matchAll(/([^{}]*\[hidden\][^{}]*)\{([^}]*)\}/g)]
     .map((m) => ({ sel: m[1].replace(/\s+/g, ' ').trim(), body: m[2] }));
-  const covers = (cls) => hiddenRules.some(
-    (r) => r.sel.includes(cls) && /display\s*:\s*none/.test(r.body) && /!important/.test(r.body)
+  const hasHiddenDisplayNone = hiddenRules.some(
+    (r) => /display\s*:\s*none/.test(r.body) && /!important/.test(r.body)
   );
-  if (!covers('.view')) {
-    fail('styles.css 缺少 .view[hidden]{display:none !important} —— 被隐藏的分组会照常渲染');
+  if (!hasHiddenDisplayNone) {
+    fail('bootstrap.min.css 缺少 [hidden]{display:none !important} —— 被隐藏的分组/面板会照常渲染');
   }
-  if (!covers('.panel')) {
-    fail('styles.css 缺少 .panel[hidden]{display:none !important} —— 被隐藏的子面板会照常渲染');
+  notes.push(`[hidden] 兜底规则来自 Bootstrap Reboot：${hiddenRules.length} 条`);
+}
+
+/* ------------------------------------------------- 4d. 样式表：仅引用 Bootstrap，已移除自定义样式 */
+{
+  if (!/href="bootstrap\.min\.css"/.test(indexHtml)) {
+    fail('index.html 必须引用 bootstrap.min.css');
   }
-  /* 声明了 display 的容器类，都必须有对应的 [hidden] 兜底 */
-  for (const cls of ['.view', '.panel']) {
-    const declRe = new RegExp(cls.replace('.', '\\.') + '\\s*\\{[^}]*display\\s*:', 'm');
-    if (declRe.test(stylesCss) && !covers(cls)) {
-      fail(`${cls} 声明了 display，却没有配套的 [hidden]{display:none !important}`);
-    }
+  if (/href="styles\.css"/.test(indexHtml)) {
+    fail('index.html 仍引用了已删除的 styles.css（应仅用 Bootstrap）');
   }
-  notes.push(`[hidden] 兜底规则：${hiddenRules.length} 条`);
+  if (!/bootstrap\.bundle\.min\.js/.test(indexHtml)) {
+    fail('index.html 必须引用 bootstrap.bundle.min.js');
+  }
+  notes.push('样式表：bootstrap.min.css + bootstrap-icons.css（无自定义样式文件）');
 }
 
 /* ------------------------------------------------- 4c. 面板必须嵌在所属 view 内 */
