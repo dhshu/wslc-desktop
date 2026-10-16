@@ -104,29 +104,31 @@
 
   <!-- ==================== 镜像 ==================== -->
   <section id="view-images" role="tabpanel" aria-labelledby="tab-images" data-view="images" hidden>
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-      <div class="form-check form-check-inline">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      <div class="form-check form-check-inline mb-0">
         <input class="form-check-input" type="checkbox" id="img-all">
-        <label class="form-check-label small" for="img-all" title="包含中间层/无标签镜像（等价 image list -a）">含中间层</label>
+        <label class="form-check-label small text-nowrap" for="img-all" title="包含中间层/无标签镜像（等价 image list -a）">含中间层</label>
       </div>
-      <label class="d-flex align-items-center gap-1 flex-grow-1" style="max-width:360px;">
-        <span class="text-secondary small">拉取</span>
-        <input id="img-pull-ref" type="text" class="form-control form-control-sm mono"
+      <label class="d-flex align-items-center gap-1 flex-grow-1 text-nowrap" style="min-width:220px; max-width:360px;">
+        <span class="text-secondary small text-nowrap">拉取</span>
+        <input id="img-pull-ref" type="text" class="form-control form-control-sm mono flex-grow-1" style="min-width:0;"
                placeholder="nginx:latest 或 registry/ns/img:tag" title="镜像引用，例如 nginx:latest" aria-label="要拉取的镜像引用">
       </label>
-      <button type="button" id="btn-img-pull" class="btn btn-sm btn-primary"
+      <button type="button" id="btn-img-pull" class="btn btn-sm btn-primary text-nowrap"
               title="拉取镜像（异步任务，输出见任务/日志抽屉）" aria-label="拉取镜像">拉取</button>
       <select id="img-pull-presets" class="form-select form-select-sm" style="max-width:260px;"
               title="常用镜像一键拉取（选择即拉取）" aria-label="常用镜像预设">
         <option value="">常用镜像…</option>
       </select>
-      <button type="button" id="btn-img-export" class="btn btn-sm btn-outline-secondary"
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <button type="button" id="btn-img-export" class="btn btn-sm btn-outline-secondary text-nowrap"
               title="导出选中的镜像到本地 tar 文件（wslc image save -o）" aria-label="导出镜像">导出…</button>
-      <button type="button" id="btn-img-import" class="btn btn-sm btn-outline-secondary"
+      <button type="button" id="btn-img-import" class="btn btn-sm btn-outline-secondary text-nowrap"
               title="从本地 tar 文件导入镜像（wslc image load -i）" aria-label="导入镜像">导入…</button>
-      <span class="ms-auto d-flex align-items-center gap-2">
+      <span class="ms-auto d-flex align-items-center gap-2 text-nowrap">
         <span id="img-count" class="text-secondary small mono">—</span>
-        <button type="button" id="btn-img-prune" class="btn btn-sm btn-outline-danger"
+        <button type="button" id="btn-img-prune" class="btn btn-sm btn-outline-danger text-nowrap"
                 title="清理未使用的镜像（破坏性操作，需二次确认）" aria-label="清理未使用镜像">清理…</button>
         <button type="button" id="btn-img-reload" class="btn btn-sm btn-outline-secondary"
                 title="刷新镜像列表 (F5)" aria-label="刷新镜像列表"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button>
@@ -371,9 +373,11 @@
 <aside id="drawer-logs" role="complementary" aria-labelledby="logs-title" hidden
        class="position-fixed top-0 end-0 h-100 bg-body border-start shadow" style="width:min(680px,92vw); z-index:1080; display:flex; flex-direction:column;">
   <header class="d-flex align-items-center gap-2 border-bottom p-2">
-    <h2 id="logs-title" class="h6 mb-0">日志</h2>
-    <span id="logs-meta" class="text-secondary small mono"></span>
-    <span class="ms-auto d-flex align-items-center gap-2">
+    <div class="flex-grow-1" style="min-width:0">
+      <h2 id="logs-title" class="h6 mb-0 text-truncate">日志</h2>
+      <div id="logs-meta" class="text-secondary small mono text-truncate"></div>
+    </div>
+    <span class="d-flex align-items-center gap-2 flex-shrink-0 text-nowrap">
       <div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="logs-autoscroll" checked>
         <label class="form-check-label small" for="logs-autoscroll">自动滚动</label></div>
       <button type="button" id="logs-pause" class="btn btn-sm btn-outline-secondary" title="暂停/继续接收输出（暂停不停止后端流）" aria-label="暂停或继续接收日志">暂停</button>
