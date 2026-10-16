@@ -2293,6 +2293,7 @@
     try {
       var data = await invoke('LoadSettings');
       state.settings = data || null;
+      syncEnvActiveMirror(state.settings);
       state.loaded[key] = true; state.loadedAt[key] = Date.now();
       if (state.settings && state.settings.PresetImages) fillPullPresets($('img-pull-presets'));
       touchLast();
@@ -2307,6 +2308,16 @@
     }
   }
 
+  // Keeps state.env.ActiveMirror in step with the saved settings so the
+  // "当前生效" banner never shows a stale endpoint after a save. Mirrors the
+  // Go-side activeMirror(): disabled rewrite means no active mirror.
+  function syncEnvActiveMirror(s) {
+    if (!state.env) return;
+    var ep = s && s.MirrorEndpoint ? String(s.MirrorEndpoint).trim() : '';
+    ep = ep.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    state.env.ActiveMirror = s && s.MirrorEnabled !== false ? ep : '';
+  }
+
   async function saveSettings() {
     if (!state.settings) return;
     var payload = readSettingsForm();
@@ -2316,6 +2327,7 @@
     try {
       var saved = await invoke('SaveSettings', payload);
       state.settings = saved || payload;
+      syncEnvActiveMirror(state.settings);
       state.loaded[key] = true; state.loadedAt[key] = Date.now();
       if (state.settings && state.settings.PresetImages) fillPullPresets($('img-pull-presets'));
       setStatus('设置已保存');
@@ -2372,13 +2384,14 @@
     return h('span', { class: 'badge rounded-pill text-bg-' + variant, text: text });
   }
 
-  function mirrorCard(m) {
-    var isActive = m === (state.settings && state.settings.MirrorEndpoint);
+  function mirrorCard(m, activeMirror) {
+    var isActive = m === activeMirror;
+    var isSelected = m === (state.settings && state.settings.MirrorEndpoint);
     var probe = state.settingsProbe[m];
     var label = mirrorLabel(m) || m;
     var note = mirrorNote(m) || '';
     return h('div', {
-      class: 'card h-100' + (isActive ? ' border-primary border-2' : ''),
+      class: 'card h-100' + (isSelected ? ' border-primary border-2' : ''),
       role: 'button', tabindex: '0', 'aria-pressed': isActive ? 'true' : 'false', 'aria-label': '选择镜像源 ' + m,
       title: '点击激活 ' + m,
       onclick: function () { activateMirror(m); },
@@ -2387,7 +2400,7 @@
       h('div', { class: 'card-header d-flex align-items-center gap-2' },
         h('span', { class: 'badge rounded-pill text-bg-secondary', 'aria-hidden': 'true', text: m.charAt(0).toUpperCase() }),
         h('div', { class: 'flex-grow-1', style: 'min-width:0' }, h('div', { class: 'text-truncate', text: label }), h('div', { class: 'small text-secondary font-monospace text-truncate', text: m })),
-        isActive ? statusPill('active', 'Currently Active') : statusPill('off', 'Normal')
+        isActive ? statusPill('active', 'Currently Active') : isSelected ? statusPill('busy', '已选·待保存') : statusPill('off', 'Normal')
       ),
       note ? h('div', { class: 'card-body small text-secondary pt-2', text: note }) : null,
       h('div', { class: 'card-footer d-flex align-items-center gap-2 bg-transparent' },
@@ -2470,6 +2483,8 @@
 
     var s = state.settings || {};
     var activeMirror = state.env && state.env.ActiveMirror ? state.env.ActiveMirror : (s.MirrorEnabled ? s.MirrorEndpoint : '');
+    var selectedMirror = s.MirrorEnabled ? (s.MirrorEndpoint || '') : '';
+    var pendingMirror = selectedMirror && selectedMirror !== activeMirror;
     var nodes = [];
 
     nodes.push(h('details', { class: 'card mb-3' },
@@ -2495,9 +2510,10 @@
           h('span', { class: 'small text-secondary', text: '当前生效' }),
           activeMirror ? statusPill('active', 'Currently Active') : statusPill('off', '已禁用'),
           h('span', { class: 'font-monospace small text-secondary', text: activeMirror || '（未启用）' }),
+          pendingMirror ? statusPill('busy', '已选 ' + selectedMirror + ' · 待保存') : null,
           h('span', { class: 'ms-auto small text-secondary', text: mirrors.length + ' 个镜像源' })
         ),
-        mirrors.length ? h('div', { class: 'row g-2' }, mirrors.map(function (m) { return h('div', { class: 'col-12 col-md-6 col-lg-4' }, mirrorCard(m)); }))
+        mirrors.length ? h('div', { class: 'row g-2' }, mirrors.map(function (m) { return h('div', { class: 'col-12 col-md-6 col-lg-4' }, mirrorCard(m, activeMirror)); }))
           : h('div', { class: 'text-secondary small text-center py-2', text: '自定义镜像源列表为空。' }),
         h('div', { class: 'd-flex gap-2 mt-3 align-items-center' },
           h('span', { class: 'small text-secondary text-nowrap', text: '自定义镜像源' }),

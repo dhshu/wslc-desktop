@@ -60,6 +60,15 @@ go test ./... -race -count=1
 - `wslc image inspect [-f format]`。
 - `wslc stats [--format json|table] [-a] [--no-trunc]`。
 - 命令别名很丰富（`wslc ps` = `wslc container list`），但**我们一律用全称形式**，减少歧义。
+- **`diskpart.exe` 必须管理员令牌**（manifest 要求 elevate）：非提权进程
+  `fork/exec` 直接失败，Win32 错误 740 `ERROR_ELEVATION_REQUIRED`（错误文本
+  “The requested operation requires elevation”）——**命令根本没跑**，与脚本
+  内容无关。压缩 storage.vhdx 的回退路径是 ShellExecuteExW `runas`（UAC 弹窗）
+  + 临时脚本文件 `/s`（提权子进程不继承 stdin，输出也无法跨完整性级别回传，
+  只能靠退出码 + 前后文件大小判断结果）；用户点掉 UAC = `ERROR_CANCELLED`。
+  有效压缩序列（固定顺序）：`select vdisk file="<path>"` →
+  `attach vdisk readonly` → `compact vdisk` → `detach vdisk`；
+  `attach vdisk` **不接** `file=` 参数，`select vdisk` 也不接数字。
 
 ## 5. 当前阻塞：vmcompute 未运行
 - 症状：`wslc list` / `image list` / `volume list` / `network list` 全部失败于

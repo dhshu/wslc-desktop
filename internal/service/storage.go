@@ -290,6 +290,9 @@ func (s *Service) ResetSessionStorage(ctx context.Context, sessionName string) (
 // re-interpreted. The file path is one argument of diskpart's own
 // `select vdisk file=...` command, which diskpart parses itself.
 //
+// diskpart demands an administrator token; when Windows refuses the plain
+// launch, the compact is retried behind a UAC prompt (see shrinkElevated).
+//
 // The session VM must be terminated first: attaching a VHDX that is already
 // attached to a running VM fails, and compacting a live disk would corrupt it.
 func (s *Service) ShrinkSessionStorage(ctx context.Context, sessionName string) (string, error) {
@@ -323,12 +326,16 @@ func (s *Service) ShrinkSessionStorage(ctx context.Context, sessionName string) 
 	if st, err := os.Stat(target); err == nil {
 		before = st.Size()
 	}
-	script := "attach vdisk file=" + target + "\n" +
-		"select vdisk 0\n" +
-		"compact vdisk\n" +
-		"detach vdisk\n"
+	script := compactScript(target)
 
 	res, err := s.runTool(ctx, "diskpart.exe", nil, script, filepath.Dir(target))
+	// diskpart's manifest demands an administrator token, so a non-elevated
+	// wslc Desktop cannot fork/exec it at all (ERROR_ELEVATION_REQUIRED). The
+	// fallback reruns it behind a UAC prompt with the script in a temp file,
+	// because an elevated child cannot inherit stdin.
+	if errors.Is(err, wslc.ErrElevationRequired) {
+		return s.shrinkElevated(ctx, target, script, before)
+	}
 	if err != nil {
 		return "", fmt.Errorf("service: 压缩 %s 失败：%w", target, err)
 	}
@@ -342,6 +349,64 @@ func (s *Service) ShrinkSessionStorage(ctx context.Context, sessionName string) 
 			formatBytes(before), formatBytes(afterBytes), formatBytes(before-afterBytes), out), nil
 	}
 	return out, nil
+}
+
+// compactScript is the diskpart command sequence that compacts one VHDX. The
+// file must be selected by path and attached readonly before compact vdisk —
+// `attach vdisk` takes no file= parameter and compact requires the readonly
+// attachment — so this order is fixed, not stylistic.
+func compactScript(target string) string {
+	return `select vdisk file="` + target + `"` + "\n" +
+		"attach vdisk readonly\n" +
+		"compact vdisk\n" +
+		"detach vdisk\n"
+}
+
+// shrinkElevated reruns the compact through a UAC prompt after Windows refused
+// to start diskpart without elevation. The script travels as a temp file (an
+// elevated child cannot inherit stdin) and the elevated child's output cannot
+// be captured, so the outcome is judged from the exit code and the file size.
+func (s *Service) shrinkElevated(ctx context.Context, target, script string, before int64) (string, error) {
+	tool, ok := s.runner.(ToolRunner)
+	if !ok {
+		return "", errors.New("service: 当前 runner 不支持执行外部工具（需要 diskpart 等 Windows 工具）")
+	}
+	f, err := os.CreateTemp("", "wslc-desktop-diskpart-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("service: 创建 diskpart 脚本文件失败：%w", err)
+	}
+	scriptPath := f.Name()
+	defer os.Remove(scriptPath)
+	if _, err := f.WriteString(script); err != nil {
+		f.Close()
+		return "", fmt.Errorf("service: 写入 diskpart 脚本文件失败：%w", err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("service: 写入 diskpart 脚本文件失败：%w", err)
+	}
+
+	res, err := tool.RunToolElevated(normalizeContext(ctx), "diskpart.exe", []string{"/s", scriptPath}, "")
+	if err != nil {
+		if errors.Is(err, wslc.ErrElevationDeclined) {
+			return "", errors.New("service: 已取消管理员授权，未执行压缩")
+		}
+		return "", fmt.Errorf("service: 压缩 %s 失败（提权执行）：%w", target, err)
+	}
+	if res.ExitCode != 0 {
+		return "", fmt.Errorf(
+			"service: 提权执行的 diskpart 退出码为 %d，压缩未完成。提权进程的输出无法回传，可尝试以管理员身份运行 wslc Desktop 后重试",
+			res.ExitCode)
+	}
+	afterBytes := int64(0)
+	if st, err := os.Stat(target); err == nil {
+		afterBytes = st.Size()
+	}
+	released := ""
+	if before > 0 {
+		released = fmt.Sprintf("（释放 %s）", formatBytes(before-afterBytes))
+	}
+	return fmt.Sprintf("已通过管理员授权完成压缩：%s -> %s%s",
+		formatBytes(before), formatBytes(afterBytes), released), nil
 }
 
 // resolveStoragePath builds and verifies the absolute path of one session's

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -354,9 +356,16 @@ func (r *ExecRunner) finish(ctx context.Context, spec Spec, res Result, waitErr 
 // startError classifies a failure to launch the process.
 func (r *ExecRunner) startError(spec Spec, err error) error {
 	var execErr *exec.Error
+	var errno syscall.Errno
 	switch {
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist), errors.As(err, &execErr):
 		return fmt.Errorf("%w: cannot start %s: %v", ErrExecutableNotFound, r.exe, err)
+	// ERROR_ELEVATION_REQUIRED: the executable's manifest demands an
+	// administrator token (diskpart does), so CreateProcess refuses before the
+	// process exists. Classified on its own so callers can retry through a UAC
+	// prompt instead of showing a fork/exec wall of text.
+	case errors.As(err, &errno) && errno == windows.ERROR_ELEVATION_REQUIRED:
+		return fmt.Errorf("%w: cannot start %s: %v", ErrElevationRequired, r.exe, err)
 	default:
 		return fmt.Errorf("wslc: cannot start %s: %w", r.exe, err)
 	}

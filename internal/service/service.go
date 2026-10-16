@@ -89,6 +89,12 @@ type ToolRunner interface {
 	// RunTool runs exe with args (never a shell string) and stdin, capturing
 	// stdout/stderr. dir is the working directory; empty inherits.
 	RunTool(ctx context.Context, exe string, args []string, stdin, dir string) (wslc.Result, error)
+
+	// RunToolElevated runs exe with args behind a UAC elevation prompt and
+	// waits for its exit code. The elevated child's console output cannot be
+	// captured across the integrity-level boundary, so only the exit code is
+	// reported; input must be handed over by file, never stdin.
+	RunToolElevated(ctx context.Context, exe string, args []string, dir string) (wslc.Result, error)
 }
 
 // EmitterFunc adapts a plain function to Emitter.

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,6 +114,11 @@ type storageFakeRunner struct {
 	calls  []toolCall
 	result wslc.Result
 	err    error
+
+	elevatedCalls  []elevatedCall
+	elevatedScript string
+	elevatedResult wslc.Result
+	elevatedErr    error
 }
 
 // Faked wraps the package's FakeRunner so the tool runner below keeps the
@@ -126,6 +132,12 @@ type toolCall struct {
 	args  []string
 	stdin string
 	dir   string
+}
+
+type elevatedCall struct {
+	exe  string
+	args []string
+	dir  string
 }
 
 func (f *storageFakeRunner) Run(ctx context.Context, spec wslc.Spec) (wslc.Result, error) {
@@ -143,6 +155,19 @@ func (f *storageFakeRunner) Available(ctx context.Context) error {
 func (f *storageFakeRunner) RunTool(ctx context.Context, exe string, args []string, stdin, dir string) (wslc.Result, error) {
 	f.calls = append(f.calls, toolCall{exe: exe, args: args, stdin: stdin, dir: dir})
 	return f.result, f.err
+}
+
+// RunToolElevated records the elevated invocation and snapshots the temp
+// script while it still exists, so tests can assert its content even though
+// the service removes the file afterwards.
+func (f *storageFakeRunner) RunToolElevated(ctx context.Context, exe string, args []string, dir string) (wslc.Result, error) {
+	f.elevatedCalls = append(f.elevatedCalls, elevatedCall{exe: exe, args: args, dir: dir})
+	for _, a := range args {
+		if raw, err := os.ReadFile(a); err == nil {
+			f.elevatedScript = string(raw)
+		}
+	}
+	return f.elevatedResult, f.elevatedErr
 }
 
 func TestListSessionStorageReportsEverySessionDir(t *testing.T) {
@@ -443,13 +468,17 @@ func TestShrinkSessionStorageInvokesDiskpart(t *testing.T) {
 	if call.dir != filepath.Dir(target) {
 		t.Errorf("dir = %q, want %q", call.dir, filepath.Dir(target))
 	}
-	// The script must be the four fixed diskpart commands, in order, with the
-	// absolute path embedded as one argument of select vdisk.
-	want := "attach vdisk file=" + target + "\nselect vdisk 0\ncompact vdisk\ndetach vdisk\n"
+	// The script must be the fixed diskpart sequence, in order, with the
+	// absolute path embedded as the argument of select vdisk. The file must be
+	// attached readonly: compact vdisk only works on a readonly attachment.
+	want := `select vdisk file="` + target + `"` + "\n" +
+		"attach vdisk readonly\n" +
+		"compact vdisk\n" +
+		"detach vdisk\n"
 	if call.stdin != want {
 		t.Errorf("stdin mismatch:\ngot  %q\nwant %q", call.stdin, want)
 	}
-	for _, line := range []string{"attach vdisk", "select vdisk 0", "compact vdisk", "detach vdisk"} {
+	for _, line := range []string{"select vdisk file=", "attach vdisk readonly", "compact vdisk", "detach vdisk"} {
 		if !strings.Contains(call.stdin, line) {
 			t.Errorf("stdin is missing %q", line)
 		}
@@ -500,6 +529,102 @@ func TestShrinkSessionStorageReportsDiskpartFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "必须提升权限") {
 		t.Errorf("expected the diskpart stderr in the error, got %v", err)
+	}
+}
+
+// TestShrinkSessionStorageElevatesAfterUAC pins the fallback for the real
+// machine's failure mode: Windows refuses to fork/exec diskpart without an
+// administrator token (ErrElevationRequired), so the compact is retried behind
+// a UAC prompt with the script in a temp file, because an elevated child
+// cannot inherit stdin.
+func TestShrinkSessionStorageElevatesAfterUAC(t *testing.T) {
+	base := t.TempDir()
+	sessionsDir := filepath.Join(base, "wslc", "sessions")
+	target := filepath.Join(sessionsDir, "wslc-cli-dhshu", vhdxName)
+	mustWriteFile(t, target, 5*1024*1024)
+
+	tool := &storageFakeRunner{
+		Faked:          &Faked{fake: wslc.NewFakeRunner().Default(wslc.Result{}, nil)},
+		elevatedResult: wslc.Result{ExitCode: 0},
+	}
+	tool.err = fmt.Errorf("wslc: cannot start %s: fork/exec ...: %w", "wslc.exe", wslc.ErrElevationRequired)
+	tool.fake.When(sessionArgs(), wslc.Result{Stdout: ""}, nil)
+	tool.fake.When(infoArgs(), wslc.Result{Stdout: `{"Client":{}}`}, nil)
+	t.Setenv("WSLC_STORAGE_PATH", base)
+
+	svc := NewService(tool, nil)
+	out, err := svc.ShrinkSessionStorage(context.Background(), "wslc-cli-dhshu")
+	if err != nil {
+		t.Fatalf("ShrinkSessionStorage: %v", err)
+	}
+	if len(tool.calls) != 1 || len(tool.elevatedCalls) != 1 {
+		t.Fatalf("expected one plain attempt and one elevated retry, got %+v / %+v", tool.calls, tool.elevatedCalls)
+	}
+	call := tool.elevatedCalls[0]
+	if call.exe != "diskpart.exe" {
+		t.Errorf("elevated exe = %q, want diskpart.exe", call.exe)
+	}
+	if len(call.args) != 2 || call.args[0] != "/s" {
+		t.Errorf("elevated args = %v, want [/s <script>]", call.args)
+	}
+	// The temp script must carry the same fixed sequence as the stdin variant.
+	want := `select vdisk file="` + target + `"` + "\n" +
+		"attach vdisk readonly\n" +
+		"compact vdisk\n" +
+		"detach vdisk\n"
+	if tool.elevatedScript != want {
+		t.Errorf("elevated script mismatch:\ngot  %q\nwant %q", tool.elevatedScript, want)
+	}
+	// The temp script file must not survive the call.
+	if _, statErr := os.Stat(call.args[1]); !os.IsNotExist(statErr) {
+		t.Errorf("temp script %s should be removed after the call (stat err=%v)", call.args[1], statErr)
+	}
+	if !strings.Contains(out, "管理员") || !strings.Contains(out, "完成压缩") {
+		t.Errorf("unexpected output: %q", out)
+	}
+}
+
+func TestShrinkSessionStorageUACDeclinedIsNotRetryable(t *testing.T) {
+	base := t.TempDir()
+	sessionsDir := filepath.Join(base, "wslc", "sessions")
+	mustWriteFile(t, filepath.Join(sessionsDir, "wslc-cli-dhshu", vhdxName), 4096)
+
+	tool := &storageFakeRunner{Faked: &Faked{fake: wslc.NewFakeRunner().Default(wslc.Result{}, nil)}}
+	tool.err = fmt.Errorf("wslc: cannot start %s: fork/exec ...: %w", "wslc.exe", wslc.ErrElevationRequired)
+	tool.elevatedErr = fmt.Errorf("wslc: %w: user dismissed the UAC prompt", wslc.ErrElevationDeclined)
+	tool.fake.When(sessionArgs(), wslc.Result{Stdout: ""}, nil)
+	tool.fake.When(infoArgs(), wslc.Result{Stdout: `{"Client":{}}`}, nil)
+	t.Setenv("WSLC_STORAGE_PATH", base)
+
+	svc := NewService(tool, nil)
+	_, err := svc.ShrinkSessionStorage(context.Background(), "wslc-cli-dhshu")
+	if err == nil {
+		t.Fatal("expected an error when the UAC prompt is dismissed")
+	}
+	if !strings.Contains(err.Error(), "取消") {
+		t.Errorf("expected a cancellation message, got %v", err)
+	}
+}
+
+func TestShrinkSessionStorageElevatedFailureReportsExitCode(t *testing.T) {
+	base := t.TempDir()
+	sessionsDir := filepath.Join(base, "wslc", "sessions")
+	mustWriteFile(t, filepath.Join(sessionsDir, "wslc-cli-dhshu", vhdxName), 4096)
+
+	tool := &storageFakeRunner{Faked: &Faked{fake: wslc.NewFakeRunner().Default(wslc.Result{}, nil)}}
+	tool.err = fmt.Errorf("wslc: cannot start %s: fork/exec ...: %w", "wslc.exe", wslc.ErrElevationRequired)
+	tool.elevatedResult = wslc.Result{ExitCode: 1}
+	tool.fake.When(sessionArgs(), wslc.Result{Stdout: ""}, nil)
+	tool.fake.When(infoArgs(), wslc.Result{Stdout: `{"Client":{}}`}, nil)
+	t.Setenv("WSLC_STORAGE_PATH", base)
+
+	svc := NewService(tool, nil)
+	_, err := svc.ShrinkSessionStorage(context.Background(), "wslc-cli-dhshu")
+	if err == nil {
+		t.Fatal("expected an error when the elevated diskpart fails")
+	}
+	if !strings.Contains(err.Error(), "退出码") {
+		t.Errorf("expected the exit code in the error, got %v", err)
 	}
 }
 

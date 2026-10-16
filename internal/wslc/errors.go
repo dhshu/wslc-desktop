@@ -35,6 +35,19 @@ var (
 	// ErrUnsupportedCommand is returned when the installed wslc build does not
 	// implement the requested command or option.
 	ErrUnsupportedCommand = errors.New("wslc: unsupported command or option")
+
+	// ErrElevationRequired is returned when a process could not be started at
+	// all because Windows refused with ERROR_ELEVATION_REQUIRED (740). Real
+	// machines show this is the fate of every diskpart invocation launched
+	// from a non-elevated wslc Desktop: diskpart's manifest demands an
+	// administrator token, so fork/exec fails before any command runs.
+	ErrElevationRequired = errors.New("wslc: elevation required")
+
+	// ErrElevationDeclined is returned when the user dismisses the UAC consent
+	// dialog of an elevated launch (ShellExecuteEx reports ERROR_CANCELLED).
+	// It is distinct from ErrElevationRequired so the UI can tell "needs
+	// permission" apart from "permission was refused".
+	ErrElevationDeclined = errors.New("wslc: elevation declined")
 )
 
 // ExitError reports a non-zero exit from a wslc invocation.
