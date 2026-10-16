@@ -81,6 +81,24 @@ go test ./... -race -count=1
   [WSLC 架构](https://devblogs.microsoft.com/commandline/wslc-architecture-deep-dive/)。
 - **不需要**安装 WSL 发行版（`wsl -l -v` 为空是正常的），**不需要** Containers / 完整 Hyper-V 角色。
 
+## 5b. 「拒绝访问」根因：项目目录被打了 Low 强制完整性标签（2026-10-16 已实锤）
+- 症状：应用里 `wslc version` 成功（纯本地执行），但 `info --format json` /
+  `system session list` / `container list --format json` 全部 `exit code 1: 拒绝访问。`；
+  同一时刻 `vmcompute`、`WslService` 均 **Running**，且控制台/探针里同样的命令全部成功。
+- 真机证据链：
+  1. 应用进程令牌 = **Low** 完整性（Medium 是正常值），而探针进程 = Medium；
+  2. `icacls` 显示项目根目录被显式写入了 `Mandatory Label\Low Mandatory Level:(OI)(CI)(NW)`
+     （无 (I) 继承标记，来源疑似某个 AI 沙箱工具；目录里另有 CodexSandboxUsers 等沙箱 ACE 痕迹）；
+  3. Low 标签随目录继承进 `build\bin\*.exe`，进程启动时继承 exe 的标签 → 应用永远 Low；
+  4. Low 进程被禁止访问系统服务 RPC 端点 → 会话管理器拒绝 = 「拒绝访问」；
+     `wslc version` 不走 RPC 所以仍成功。
+- 修复（无需管理员）：清掉根目录标签（`SetNamedSecurityInfoW` 已实测可行），
+  再**删除重建** `build\` 目录使其继承默认 Medium（已存在的子对象因 SACL 特权限制改不动，
+  删了重建是唯一免提权路径）。重建后的 exe 进程实测回到 Medium，wslc 恢复正常。
+- 防复发：`internal/service/integrity_windows.go` 在 EnvCheck 里自检进程完整性，
+  Low 时直接给出 `problemLowIntegrity`（指认标签根因，而不是误导去改 vmcompute）。
+- 排查命令：`icacls <目录> | findstr /i Mandatory` —— 正常情况应**无任何输出**。
+
 ## 6. 因此的测试策略
 在 `vmcompute` 被修复前，任何依赖真实容器的测试都必须能跳过而不是失败：
 - 单元测试：一律用 `wslc.FakeRunner`，不依赖真实 wslc。

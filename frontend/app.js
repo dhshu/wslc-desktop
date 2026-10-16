@@ -544,8 +544,12 @@
     }
     if (state.banners.env) {
       var e = state.banners.env;
+      var problemText = (e.lines || []).join(' ');
+      var tip = /拒绝访问|ACCESSDENIED/i.test(problemText)
+        ? '修复建议：关闭应用，在普通 PowerShell 执行 wsl --shutdown 清理 wslc 残留会话后重新打开应用（详见问题条目内说明）。'
+        : '修复建议：以管理员身份打开 PowerShell，执行 Set-Service -Name vmcompute -StartupType Manual 后 Start-Service vmcompute。';
       nodes.push(bannerNode('warn', e.title, e.lines,
-        h('div', { class: 'text-secondary small mt-1', text: '修复建议：以管理员身份打开 PowerShell，执行 Set-Service -Name vmcompute -StartupType Manual 后 Start-Service vmcompute。' })));
+        h('div', { class: 'text-secondary small mt-1', text: tip })));
     }
     mount('banner-root', nodes);
   }

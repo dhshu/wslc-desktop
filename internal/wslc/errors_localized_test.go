@@ -45,6 +45,30 @@ func TestExitErrorUnwrapLocalized(t *testing.T) {
 			want:   ErrServiceUnavailable,
 		},
 		{
+			// 2026-10-16 真机：vmcompute/WslService 均 Running，应用（非管理员）
+			// 的 info / session list / container list 全部以此 stderr 失败。
+			name:   "zh-CN access denied",
+			stderr: "拒绝访问。",
+			want:   ErrAccessDenied,
+		},
+		{
+			name:   "zh-CN access denied with error code",
+			stderr: "错误代码： E_ACCESSDENIED",
+			want:   ErrAccessDenied,
+		},
+		{
+			name:   "english access denied",
+			stderr: "Access is denied.",
+			want:   ErrAccessDenied,
+		},
+		{
+			// 镜像层自己的 "pull access denied" 是 registry 语义，不是 Windows
+			// 访问拒绝（"ACCESS IS DENIED" 带 IS），不能被卷进来。
+			name:   "registry pull access denied is not windows access denied",
+			stderr: "pull access denied for verify-unreachable, repository does not exist",
+			want:   nil,
+		},
+		{
 			name:   "english not found still works",
 			stderr: "Error: No such container: web",
 			want:   ErrNotFound,

@@ -15,7 +15,9 @@ import (
 //
 //  1. wslc.exe missing            -> ErrExecutableNotFound
 //  2. wslc runs, service is down  -> ErrServiceUnavailable (vmcompute stopped)
-//  3. everything works            -> Problems stays empty
+//  3. wslc runs, calls refused    -> ErrAccessDenied (session elevation
+//     mismatch / stale session; services may all be Running)
+//  4. everything works            -> Problems stays empty
 const (
 	problemExecutableNotFound = "未找到 wslc.exe：容器功能不可用。修复：先升级 WSL（wsl --update；wslc 需要 WSL 2.9.3+，本机已知位置 C:\\Program Files\\WSL\\wslc.exe）；" +
 		"若已安装，请将环境变量 WSLC_PATH 指向 wslc.exe 后重启应用。"
@@ -24,6 +26,19 @@ const (
 		"修复（需要管理员 PowerShell）：Set-Service -Name vmcompute -StartupType Manual; Start-Service vmcompute; Get-Service vmcompute（期望 Running）。" +
 		"若仍不可用：确认可选功能 VirtualMachinePlatform 已启用（Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart，必要时重启），" +
 		"并检查 bcdedit /enum 中 hypervisorlaunchtype 为 Auto。不需要安装 WSL 发行版，也不需要 Containers / 完整 Hyper-V 角色。"
+
+	problemAccessDenied = "wslc 返回「拒绝访问」（E_ACCESSDENIED）：这不代表 vmcompute 未运行。" +
+		"wslc 按终端提权级别维护两个独立会话（普通 wslc-cli-<用户名> 与管理员 wslc-cli-admin-<用户名>），各自有独立 VM 和磁盘，" +
+		"常见原因是应用与残留 wslc 会话的提权级别不一致，或会话服务句柄已失效。" +
+		"修复：关闭本应用，在普通（非管理员）PowerShell 执行 wsl --shutdown 清理全部会话后重新打开应用，" +
+		"并保持应用与日常使用 wslc 的提权级别一致（两个会话的数据互不可见）。" +
+		"若执行 wsl --shutdown 后仍被拒绝，再按「容器服务不可用」的 vmcompute 路径排查。"
+
+	problemLowIntegrity = "本应用进程以 Low 完整性级别运行：Windows 禁止 Low 进程访问系统服务的 RPC 端点，" +
+		"所有需要会话管理器的 wslc 命令都会报「拒绝访问」（wslc version 纯本地执行所以仍能成功）。" +
+		"根因是应用 exe 所在目录被写入了 Mandatory Label\\Low 强制完整性标签并被编译产物继承。" +
+		"修复：删除 exe 后重新构建（新文件继承目录的正常标签），" +
+		"或以管理员执行 icacls \"<exe目录>\" /setintegritylevel (OI)(CI)M 后重启应用。"
 )
 
 // EnvCheck probes the machine and reports whether wslc, and the container
@@ -62,6 +77,13 @@ func (s *Service) EnvCheck(ctx context.Context) (EnvStatus, error) {
 	}
 	status.Available = true
 
+	// A Low-integrity process is refused by every service RPC endpoint, which
+	// mimics a broken wslc install. Surface the real cause before any wslc
+	// probe so the advice names the label, not vmcompute.
+	if processRunsLowIntegrity() {
+		status.Problems = append(status.Problems, problemLowIntegrity)
+	}
+
 	// `wslc version` only talks to the IPC endpoint, so it works even while the
 	// container service is down — which is exactly what makes it a good probe.
 	if version, err := s.versionInfo(ctx); err != nil {
@@ -94,6 +116,8 @@ func (s *Service) EnvCheck(ctx context.Context) (EnvStatus, error) {
 		status.ServiceReady = true
 	case errors.Is(err, wslc.ErrServiceUnavailable):
 		status.Problems = append(status.Problems, problemServiceUnavailable+"（原始错误："+oneLine(err)+"）")
+	case errors.Is(err, wslc.ErrAccessDenied):
+		status.Problems = append(status.Problems, problemAccessDenied+"（原始错误："+oneLine(err)+"）")
 	case errors.Is(err, wslc.ErrExecutableNotFound):
 		status.Available = false
 		status.Problems = append(status.Problems, problemExecutableNotFound)
@@ -118,6 +142,8 @@ func describeAvailability(err error) string {
 		return problemExecutableNotFound
 	case errors.Is(err, wslc.ErrServiceUnavailable):
 		return problemServiceUnavailable + "（原始错误：" + oneLine(err) + "）"
+	case errors.Is(err, wslc.ErrAccessDenied):
+		return problemAccessDenied + "（原始错误：" + oneLine(err) + "）"
 	default:
 		return "wslc 无法执行：" + oneLine(err) + "。修复：检查环境变量 WSLC_PATH 是否指向 wslc.exe，以及当前用户是否有执行权限。"
 	}

@@ -19,6 +19,15 @@ var (
 	// being stopped or disabled.
 	ErrServiceUnavailable = errors.New("wslc: container service unavailable")
 
+	// ErrAccessDenied is returned when wslc itself runs but every
+	// session-touching call is refused with 拒绝访问 / E_ACCESSDENIED. Real
+	// machines show this does NOT imply vmcompute is down: wslc keeps two
+	// independent sessions per elevation level (wslc-cli-<user> and
+	// wslc-cli-admin-<user>), so a client can be refused while all services
+	// are Running — typically because of a stale session created at a
+	// different elevation level, or a wedged session service handle.
+	ErrAccessDenied = errors.New("wslc: access denied")
+
 	// ErrExecutableNotFound is returned when wslc.exe could not be located on
 	// this machine (usually because WSL is older than 2.9.3).
 	ErrExecutableNotFound = errors.New("wslc: executable not found")
@@ -54,17 +63,21 @@ func (e *ExitError) Error() string {
 // wordings of each condition are matched.
 func (e *ExitError) Unwrap() error {
 	text := strings.ToUpper(e.Stderr + "\n" + e.Stdout)
-	// E_ACCESSDENIED is a Windows-side access refusal (vmcompute stopped, or a
-	// non-container command run without a session). It is NOT an "object not
-	// found": classifying it as ErrNotFound would mislead the UI and the tests,
-	// because every volume/network/container probe on a locked-down machine
-	// would start to look like a missing object.
 	switch {
 	case strings.Contains(text, "HCS_E_SERVICE_NOT_AVAILABLE"),
 		strings.Contains(text, "无法启动操作"),
 		strings.Contains(text, "COULD NOT BE STARTED BECAUSE A REQUIRED FEATURE"),
 		strings.Contains(text, "未安装所需的特性"):
 		return ErrServiceUnavailable
+	// 拒绝访问 must be classified on its own: it reads like a permission
+	// problem but on real machines it also appears with every service up,
+	// when the elevation level of the client and the surviving session
+	// disagree. It is deliberately NOT ErrServiceUnavailable, so the UI can
+	// suggest `wsl --shutdown` instead of blaming vmcompute.
+	case strings.Contains(text, "拒绝访问"),
+		strings.Contains(text, "E_ACCESSDENIED"),
+		strings.Contains(text, "ACCESS IS DENIED"):
+		return ErrAccessDenied
 	case strings.Contains(text, "NO SUCH CONTAINER"),
 		strings.Contains(text, "NO SUCH IMAGE"),
 		strings.Contains(text, "NO SUCH VOLUME"),
