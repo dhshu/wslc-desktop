@@ -19,17 +19,14 @@ $env:Path = "C:\Program Files\Go\bin;$env:USERPROFILE\go\bin;$env:Path"
 - Go 版本要求：Wails v2.16.0 的 `go.mod` 声明 `go 1.25.0`，本机 go1.27.0 满足。
   本仓库 `go.mod` 已设为 `go 1.25.0`。
 
-## 2b. `go test -race` 需要 cgo（已解决）
+## 2b. `go test -race` 需要 cgo（环境可选，非项目依赖）
 - 默认 `CGO_ENABLED=0` 且无 C 编译器 → `-race` 会报 `go: -race requires cgo`。
-- **已用 winget 安装 LLVM MinGW**，`-race` 现已可用。跑 race 测试前加上：
+- 跑 race 测试需要本机另装 C 工具链并设置：
 ```powershell
-$mingw = "C:\Users\<you>\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_*\llvm-mingw-*\bin"
-$env:Path = "C:\Program Files\Go\bin;$mingw;$env:Path"
 $env:CGO_ENABLED = "1"
 go test ./... -race -count=1
 ```
-- 验证结果：`go test ./internal/wslc/ -race -count=1` → `ok ... 2.643s`（通过）。
-- 注意：这个 `gcc.exe` 实际是 clang 的 shim，`gcc --version` 会打印 `clang version 22.1.8` —— 这是**正常的**。
+- 未安装 C 工具链时跳过 `-race`，直接用 `go test ./... -count=1`。
 - 运行 `wails build` 时**不要**设 `CGO_ENABLED=1`；Windows 上 Wails 用默认的 0 即可。
 
 ## 3. Wails v2 绑定规则（踩坑点）

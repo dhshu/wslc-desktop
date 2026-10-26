@@ -65,7 +65,7 @@ node frontend/tools/smoke.mjs
 go test -tags integration ./... -count=1
 ```
 
-跑竞态检测需要 cgo + C 工具链（LLVM MinGW 之类），**不要**在 `wails build` 前设 `CGO_ENABLED=1`：
+跑竞态检测需要 cgo + C 工具链（本机未安装则跳过 `-race`），**不要**在 `wails build` 前设 `CGO_ENABLED=1`：
 
 ```powershell
 $env:CGO_ENABLED = "1"
